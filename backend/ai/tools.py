@@ -21,6 +21,7 @@ class ContextoHerramientas:
     df_comparativo: pl.DataFrame
     semanas_grafico: list[str]
     semanas_historico: list[str]
+    resumen_total: dict | None = None  # comparación actual vs. anterior agregada de TODO el dataset (sin filtrar)
 
 
 TOOLS_SCHEMA = [
@@ -78,6 +79,21 @@ TOOLS_SCHEMA = [
                 },
                 "required": ["dimensiones"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "obtener_resumen_total",
+            "description": (
+                "Comparación actual vs. período anterior de usd, pedidos, clientes y "
+                "posiciones_por_pedido, agregando TODO el dataset sin filtrar a ningún "
+                "segmento. Usar esto (y sólo esto) cuando la pregunta sea sobre la evolución, "
+                "el total o el resultado GENERAL del negocio, sin pedir explicación de un "
+                "segmento en particular — nunca inventes estos totales, siempre pedí esta "
+                "herramienta."
+            ),
+            "parameters": {"type": "object", "properties": {}},
         },
     },
     {
@@ -191,10 +207,20 @@ def desglosar_variacion(ctx: ContextoHerramientas, dimensiones: list[str], filtr
             "dimensiones": dims_set,
             "filtro": filtro_dict,
             "filas": [],
-            "nota": "No hay datos para esa combinación de dimensiones/filtro.",
+            "nota": (
+                "No hay datos para esa combinación de dimensiones/filtro. Si adivinaste el "
+                "valor del filtro, llamá obtener_tabla_dimension para esa dimensión primero y "
+                "usá un valor real de ahí — no reintentes con otro valor inventado."
+            ),
         }
 
     return {"dimensiones": dims_set, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:15]]}
+
+
+def obtener_resumen_total(ctx: ContextoHerramientas) -> dict:
+    if not ctx.resumen_total:
+        return {"error": "No hay resumen total disponible para esta corrida."}
+    return ctx.resumen_total
 
 
 def detalle_cliente(ctx: ContextoHerramientas, cliente_id: str) -> dict:
@@ -232,7 +258,15 @@ def consultar_tendencia_historica(ctx: ContextoHerramientas, dimensiones: list[s
     candidatos = [c for c in ctx.cruces if c["nivel"] == len(dims_set) and set(c["dimensiones"]) == set(dims_set)]
     match = next((c for c in candidatos if all(c["segmento"].get(k) == v for k, v in filtro_dict.items())), None)
     if match is None:
-        return {"error": "No se encontró ese cruce exacto entre los datos calculados."}
+        return {
+            "error": (
+                "No se encontró ese cruce exacto entre los datos calculados. Si adivinaste "
+                "el valor del filtro, llamá obtener_tabla_dimension para esa dimensión primero "
+                "y usá un valor real de ahí. Si preguntan por la evolución TOTAL sin filtrar a "
+                "un segmento, no uses esta herramienta: pedí directamente un gráfico line con "
+                "filters vacío en tu respuesta final."
+            )
+        }
 
     return {
         "segmento": match["segmento"],
@@ -248,6 +282,7 @@ def consultar_tendencia_historica(ctx: ContextoHerramientas, dimensiones: list[s
 DISPATCH = {
     "obtener_tabla_dimension": obtener_tabla_dimension,
     "desglosar_variacion": desglosar_variacion,
+    "obtener_resumen_total": obtener_resumen_total,
     "detalle_cliente": detalle_cliente,
     "consultar_tendencia_historica": consultar_tendencia_historica,
 }

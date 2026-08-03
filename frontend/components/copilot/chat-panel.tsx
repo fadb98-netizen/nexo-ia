@@ -6,7 +6,9 @@ import { Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { UserBubble, AssistantResponse } from "./chat-message";
 import { preguntar } from "@/lib/api";
-import type { ChatResponse, ContextoSeleccionado } from "@/types";
+import type { ChatResponse, ContextoSeleccionado, HistorialItem } from "@/types";
+
+const TURNOS_HISTORIAL_ENVIADOS = 4;
 
 const PREGUNTAS_SUGERIDAS = [
   "¿Qué combinación explica mejor la caída?",
@@ -46,6 +48,25 @@ export function ChatPanel({
       if (!texto.trim()) return;
       const idUsuario = `u-${Date.now()}`;
       const idAsistente = `a-${Date.now()}`;
+
+      const historial: HistorialItem[] = [];
+      for (let i = 0; i < mensajes.length - 1; i++) {
+        const pregunta = mensajes[i];
+        const respuesta = mensajes[i + 1];
+        if (pregunta.rol === "usuario" && pregunta.texto && respuesta.rol === "asistente" && respuesta.respuesta) {
+          historial.push({
+            pregunta: pregunta.texto,
+            respuesta_resumen: `${respuesta.respuesta.que_ocurrio} ${respuesta.respuesta.cuanto_explica}`.trim(),
+          });
+        }
+      }
+      const historialReciente = historial.slice(-TURNOS_HISTORIAL_ENVIADOS);
+
+      // el contexto seleccionado (hallazgo/gráfico) sólo vale para esta pregunta puntual:
+      // se limpia enseguida para que no siga aplicándose a las preguntas siguientes.
+      const contextoDeEstaPregunta = contexto;
+      if (contexto) onLimpiarContexto();
+
       setMensajes((prev) => [
         ...prev,
         { id: idUsuario, rol: "usuario", texto },
@@ -53,7 +74,7 @@ export function ChatPanel({
       ]);
       setInput("");
       try {
-        const respuesta = await preguntar(runId, texto, contexto);
+        const respuesta = await preguntar(runId, texto, contextoDeEstaPregunta, historialReciente);
         setMensajes((prev) => prev.map((m) => (m.id === idAsistente ? { ...m, cargando: false, respuesta } : m)));
       } catch (err) {
         setMensajes((prev) =>
@@ -81,7 +102,7 @@ export function ChatPanel({
         );
       }
     },
-    [runId, contexto]
+    [runId, contexto, mensajes, onLimpiarContexto]
   );
 
   React.useEffect(() => {

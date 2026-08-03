@@ -99,7 +99,25 @@ def _validar_ranking(ranking: list[dict], cruces_disponibles: list[dict]) -> lis
     return problemas
 
 
-def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[bool, list[str]]:
+def _aplanar_resumen_total(resumen_total: dict | None) -> dict:
+    """Convierte {"usd": {"actual": .., "anterior": .., ...}, "pedidos": {...}, ...}
+    en un dict plano {"usd_actual": .., "usd_anterior": .., ...} para poder
+    contrastar contra `metricas_respaldo` con el mismo mecanismo que un cruce."""
+    if not resumen_total:
+        return {}
+    plano = {}
+    for metrica, comparacion in resumen_total.items():
+        if not isinstance(comparacion, dict):
+            continue
+        for campo, valor in comparacion.items():
+            if isinstance(valor, (int, float)):
+                plano[f"{metrica}_{campo}"] = valor
+    return plano
+
+
+def validar_respuesta(
+    respuesta: dict, cruces_disponibles: list[dict], resumen_total: dict | None = None
+) -> tuple[bool, list[str]]:
     problemas: list[str] = []
 
     segmento = respuesta.get("segmento") or []
@@ -109,8 +127,31 @@ def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[
     graficos = respuesta.get("graficos") or []
     ranking = respuesta.get("ranking") or []
 
-    if not segmento:
-        problemas.append("No especifica ninguna combinación de dimensiones (segmento vacío).")
+    dimensiones_en_segmento = [s.get("dimension") for s in segmento]
+    if len(dimensiones_en_segmento) != len(set(dimensiones_en_segmento)):
+        problemas.append(
+            "El 'segmento' de nivel superior repite la misma dimensión con más de un valor "
+            "(eso corresponde a un ranking, no a un solo cruce): usá el campo 'ranking' para "
+            "comparar varios valores de una misma dimensión, y dejá 'segmento' con un único "
+            "valor por dimensión."
+        )
+
+    # segmento vacío es válido: es la respuesta a una pregunta sobre el TOTAL/
+    # agregado general, no sobre un cruce específico. En ese caso se contrasta
+    # metricas_respaldo contra el resumen total real en vez de contra un cruce.
+    if not segmento and not ranking:
+        totales_planos = _aplanar_resumen_total(resumen_total)
+        for m in metricas:
+            nombre_norm = re.sub(r"[^a-z_]", "", str(m.get("nombre", "")).lower().replace(" ", "_"))
+            valor_citado = _extraer_numero(str(m.get("valor", "")))
+            if nombre_norm in totales_planos and valor_citado is not None:
+                real = float(totales_planos[nombre_norm])
+                tolerancia = max(abs(real) * 0.05, 1.0)
+                if abs(abs(valor_citado) - abs(real)) > tolerancia:
+                    problemas.append(
+                        f"La métrica '{m.get('nombre')}' citada ({valor_citado}) no coincide con el "
+                        f"total real calculado ({real})."
+                    )
 
     if len(metricas) < 2:
         problemas.append("Trae menos de 2 métricas de respaldo: no hay evidencia numérica suficiente.")

@@ -1,4 +1,4 @@
-import type { ChartData, ChatResponse, ContextoSeleccionado, UploadResponse } from "@/types";
+import type { ChartData, ChatResponse, ContextoSeleccionado, HistorialItem, UploadResponse } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -38,12 +38,18 @@ export async function cargarDemo(): Promise<UploadResponse> {
 export async function preguntar(
   runId: string,
   pregunta: string,
-  contextoSeleccionado?: ContextoSeleccionado | null
+  contextoSeleccionado?: ContextoSeleccionado | null,
+  historial?: HistorialItem[]
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ run_id: runId, pregunta, contexto_seleccionado: contextoSeleccionado ?? null }),
+    body: JSON.stringify({
+      run_id: runId,
+      pregunta,
+      contexto_seleccionado: contextoSeleccionado ?? null,
+      historial: historial ?? [],
+    }),
   });
   if (!res.ok) throw new ApiError(await parseErrorDetail(res), res.status);
   return res.json();

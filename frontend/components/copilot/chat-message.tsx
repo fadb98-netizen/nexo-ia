@@ -71,16 +71,34 @@ export function AssistantResponse({ respuesta }: { respuesta: ChatResponse }) {
 
       <p className="text-xs leading-relaxed text-fg-subtle">{respuesta.evolucion_semanal}</p>
 
-      {respuesta.limitaciones && (
-        <p className="rounded-md border border-warning/20 bg-warning/5 px-2 py-1.5 text-xs leading-relaxed text-warning">
-          {respuesta.limitaciones}
-        </p>
-      )}
+      {respuesta.limitaciones &&
+        (respuesta.origen === "determinista" ? (
+          // Fallback real: la IA no pudo producir una respuesta válida (o no está
+          // configurada) y se muestra el mejor hallazgo calculado por Python solo.
+          // Esto sí es una degradación real del servicio: se marca fuerte a propósito.
+          <p className="rounded-md border border-warning/20 bg-warning/5 px-2 py-1.5 text-xs leading-relaxed text-warning">
+            <span className="font-medium">Modo sin investigación de IA: </span>
+            {respuesta.limitaciones}
+          </p>
+        ) : (
+          // Caveat de rutina que la propia IA agrega a una respuesta válida (poco
+          // volumen, serie volátil, etc.) — no es un error, se muestra como nota al pie.
+          <p className="text-[11px] leading-relaxed text-fg-subtle">
+            <span className="text-fg-muted">Limitaciones: </span>
+            {respuesta.limitaciones}
+          </p>
+        ))}
 
       {respuesta.graficos.map((g, i) => (
         <div key={i} className="rounded-md border border-border-subtle p-2">
           <div className="mb-1 text-[11px] font-medium text-fg-muted">{g.titulo}</div>
-          {g.datos ? <ChartRenderer data={g.datos} height={160} /> : <p className="text-[11px] text-fg-subtle">{g.error}</p>}
+          {g.datos ? (
+            <ChartRenderer data={g.datos} height={160} />
+          ) : (
+            <p className="rounded-sm bg-bg-inset px-2 py-2 text-[11px] leading-relaxed text-fg-subtle">
+              No se pudo mostrar este gráfico: {g.error || "motivo desconocido."}
+            </p>
+          )}
         </div>
       ))}
     </div>

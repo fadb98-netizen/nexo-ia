@@ -55,10 +55,54 @@ def test_respuesta_bien_formada_pasa():
     assert valido, problemas
 
 
-def test_segmento_vacio_falla():
-    valido, problemas = validator.validar_respuesta(_respuesta_base(segmento=[]), CRUCES_DISPONIBLES)
+def test_segmento_con_dimension_repetida_falla():
+    """segmento con varios valores de la MISMA dimensión (ej. 4 sucursales)
+    es el anti-patrón que 'ranking' vino a reemplazar: tiene que rechazarse
+    aunque los nombres de metricas_respaldo no calcen 1 a 1 con las claves
+    del cruce (no depender sólo del cross-check numérico)."""
+    resp = _respuesta_base(
+        segmento=[
+            {"dimension": "sucursal", "valor": "CAPITAL"},
+            {"dimension": "sucursal", "valor": "CORDOBA"},
+        ]
+    )
+    valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES)
     assert not valido
-    assert any("segmento" in p.lower() for p in problemas)
+    assert any("repite la misma dimensión" in p for p in problemas)
+
+
+RESUMEN_TOTAL = {
+    "usd": {"actual": 2176220.0, "anterior": 2477074.0, "diferencia_absoluta": -300854.0, "variacion_pct": -12.1},
+    "pedidos": {"actual": 760, "anterior": 843, "diferencia_absoluta": -83, "variacion_pct": -9.8},
+}
+
+
+def test_segmento_vacio_es_valido_para_pregunta_sobre_el_total():
+    """Una respuesta sobre el TOTAL del negocio (sin segmento específico) es
+    válida si sus métricas coinciden con el resumen total real — no hay que
+    forzar un segmento sólo para pasar la validación."""
+    resp = _respuesta_base(
+        segmento=[],
+        metricas_respaldo=[
+            {"nombre": "usd_actual", "valor": "2176220"},
+            {"nombre": "usd_anterior", "valor": "2477074"},
+        ],
+    )
+    valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES, RESUMEN_TOTAL)
+    assert valido, problemas
+
+
+def test_segmento_vacio_con_metrica_que_no_coincide_con_el_total_falla():
+    resp = _respuesta_base(
+        segmento=[],
+        metricas_respaldo=[
+            {"nombre": "usd_actual", "valor": "999999999"},
+            {"nombre": "usd_anterior", "valor": "2477074"},
+        ],
+    )
+    valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES, RESUMEN_TOTAL)
+    assert not valido
+    assert any("no coincide" in p for p in problemas)
 
 
 def test_segmento_inventado_falla():

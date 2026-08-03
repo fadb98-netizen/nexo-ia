@@ -168,6 +168,11 @@ export interface ChatResponse {
   ranking: RankingItem[];
 }
 
+export interface HistorialItem {
+  pregunta: string;
+  respuesta_resumen: string;
+}
+
 export interface ContextoSeleccionado {
   tipo: "hallazgo" | "grafico";
   titulo: string;

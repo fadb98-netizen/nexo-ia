@@ -8,15 +8,20 @@ por IA. La aplicación nunca falla por falta de IA (criterio de aceptación).
 from __future__ import annotations
 
 import json
+import logging
 import os
 
 from config import DIMENSIONES
 from ai import prompts, tools, validator
 from core import charts
+from core.evidence import describir_segmento
+
+logger = logging.getLogger("nexo_ia.assistant")
 
 MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 MAX_RONDAS_HERRAMIENTAS = 6
-MAX_REINTENTOS_VALIDACION = 1
+MAX_REINTENTOS_VALIDACION = 2
+MAX_TURNOS_HISTORIAL = 4  # cuántos intercambios previos se le pasan a la IA como memoria real
 
 # Campos numéricos de un cruce que el ranking puede citar. Es una lista
 # cerrada a propósito: así el validador puede leer cruce_citado[metrica]
@@ -162,26 +167,35 @@ def responder(
     hallazgos: list[dict],
     contexto_seleccionado: dict | None = None,
     anotaciones: list[str] | None = None,
+    historial: list[dict] | None = None,
 ) -> dict:
     anotaciones = anotaciones or []
+    historial = historial or []
     client = _cliente()
     if client is None:
         return _respuesta_determinista(
             pregunta, hallazgos, "No hay una clave de OpenAI configurada: se muestra el mejor hallazgo calculado por Python."
         )
 
-    mensajes = [
-        {"role": "system", "content": prompts.SYSTEM_ASISTENTE},
-        {"role": "user", "content": prompts.prompt_pregunta(pregunta, contexto_seleccionado, anotaciones)},
-    ]
+    mensajes = [{"role": "system", "content": prompts.SYSTEM_ASISTENTE}]
+    for turno in historial[-MAX_TURNOS_HISTORIAL:]:
+        mensajes.append({"role": "user", "content": turno["pregunta"]})
+        mensajes.append({"role": "assistant", "content": turno["respuesta_resumen"]})
+    mensajes.append({"role": "user", "content": prompts.prompt_pregunta(pregunta, contexto_seleccionado, anotaciones)})
+
+    logger.info(
+        "responder: pregunta=%r turnos_historial=%d contexto=%s",
+        pregunta, min(len(historial), MAX_TURNOS_HISTORIAL), contexto_seleccionado.get("titulo") if contexto_seleccionado else None,
+    )
 
     try:
         _correr_rondas_de_herramientas(client, mensajes, ctx)
         respuesta = _forzar_respuesta_estructurada(client, mensajes)
 
-        valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces)
+        valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces, ctx.resumen_total)
         intentos = 0
         while not valido and intentos < MAX_REINTENTOS_VALIDACION:
+            logger.info("responder: validacion fallida (intento %d): %s", intentos, "; ".join(problemas))
             mensajes.append({"role": "assistant", "content": json.dumps(respuesta, ensure_ascii=False)})
             mensajes.append(
                 {
@@ -194,10 +208,11 @@ def responder(
             )
             _correr_rondas_de_herramientas(client, mensajes, ctx)
             respuesta = _forzar_respuesta_estructurada(client, mensajes)
-            valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces)
+            valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces, ctx.resumen_total)
             intentos += 1
 
         if not valido:
+            logger.info("responder: fallback determinista tras %d reintentos. problemas=%s", intentos, "; ".join(problemas))
             return _respuesta_determinista(
                 pregunta,
                 hallazgos,
@@ -207,15 +222,30 @@ def responder(
             )
 
         respuesta["origen"] = "ia"
-        respuesta["graficos"] = _resolver_graficos(respuesta.get("graficos", []), ctx)
+        graficos_solicitados = respuesta.get("graficos", [])
+        respuesta["graficos"] = _resolver_graficos(graficos_solicitados, ctx, respuesta.get("segmento") or [])
+        logger.info(
+            "responder: OK nivel_evidencia=%s graficos_solicitados=%s ranking_items=%d",
+            respuesta.get("nivel_evidencia"),
+            [g.get("chart_type") for g in graficos_solicitados],
+            len(respuesta.get("ranking") or []),
+        )
         return respuesta
 
     except Exception as exc:  # noqa: BLE001 - cualquier falla de la API de OpenAI no debe tumbar la app
+        logger.exception("responder: error consultando la IA")
         return _respuesta_determinista(pregunta, hallazgos, f"Error consultando la IA ({exc}); se muestra el mejor hallazgo calculado por Python.")
 
 
+def _contar_registros(resultado: dict) -> int:
+    for clave in ("filas", "series"):
+        if isinstance(resultado.get(clave), list):
+            return len(resultado[clave])
+    return 1 if resultado.get("encontrado") else 0
+
+
 def _correr_rondas_de_herramientas(client, mensajes: list[dict], ctx: tools.ContextoHerramientas) -> None:
-    for _ in range(MAX_RONDAS_HERRAMIENTAS):
+    for ronda in range(MAX_RONDAS_HERRAMIENTAS):
         resp = client.chat.completions.create(model=MODEL, messages=mensajes, tools=tools.TOOLS_SCHEMA, tool_choice="auto")
         msg = resp.choices[0].message
         if not msg.tool_calls:
@@ -236,6 +266,11 @@ def _correr_rondas_de_herramientas(client, mensajes: list[dict], ctx: tools.Cont
             except json.JSONDecodeError:
                 args = {}
             resultado = tools.ejecutar_tool(tc.function.name, args, ctx)
+            logger.info(
+                "tool_call[ronda %d]: %s(%s) -> %d registros%s",
+                ronda, tc.function.name, args, _contar_registros(resultado),
+                " [nota: " + resultado["nota"] + "]" if resultado.get("nota") else "",
+            )
             mensajes.append(
                 {"role": "tool", "tool_call_id": tc.id, "content": json.dumps(resultado, ensure_ascii=False, default=str)}
             )
@@ -252,21 +287,61 @@ def _forzar_respuesta_estructurada(client, mensajes: list[dict]) -> dict:
     return json.loads(resp.choices[0].message.content)
 
 
-def _resolver_graficos(graficos: list[dict], ctx: tools.ContextoHerramientas) -> list[dict]:
+def _datos_vacios(datos: dict) -> bool:
+    """Detecta si un gráfico ya calculado no tiene ningún valor real que
+    mostrar (todo cero o listas vacías), para no mandarle al frontend un
+    gráfico en blanco sin explicación."""
+    tipo = datos.get("tipo")
+    if tipo == "line":
+        return not any(p["valor"] for s in datos.get("series", []) for p in s.get("datos", []))
+    if tipo == "diverging_bar":
+        return not any(c["diferencia"] for c in datos.get("categorias", []))
+    if tipo == "heatmap":
+        return not any(c["valor"] for c in datos.get("celdas", []))
+    if tipo == "stacked_100":
+        return not any(f.get("categorias") for f in datos.get("filas", []))
+    if tipo == "pie":
+        return not any(p["valor"] for p in datos.get("porciones", []))
+    if tipo == "table":
+        return not datos.get("filas")
+    return False
+
+
+def _resolver_graficos(graficos: list[dict], ctx: tools.ContextoHerramientas, segmento_principal: list[dict]) -> list[dict]:
     resueltos = []
     for g in graficos:
+        filters = {f["dimension"]: f["valor"] for f in g.get("filters", [])}
+        group_by = g.get("group_by") or ""
+        # Si la respuesta cita un segmento específico, el/los gráficos tienen que
+        # mostrar ESE segmento, no el total — si la IA pidió el gráfico sin
+        # filtrar (o filtrando sólo una parte), se completa con el resto del
+        # segmento citado para que el gráfico y el texto no se contradigan.
+        for s in segmento_principal:
+            dim, val = s.get("dimension"), s.get("valor")
+            if dim and dim not in filters and dim not in group_by.split(","):
+                filters[dim] = val
         req = {
             "chart_type": g.get("chart_type"),
             "metric": g.get("metric"),
-            "group_by": g.get("group_by"),
-            "filters": {f["dimension"]: f["valor"] for f in g.get("filters", [])},
+            "group_by": group_by,
+            "filters": filters,
             "comparison": g.get("comparison", "ninguna"),
         }
         valido, motivo = charts.validar_chart_request(req)
         if not valido:
+            logger.info("grafico rechazado: %s (%s)", req, motivo)
             resueltos.append({"titulo": g.get("title", ""), "error": motivo})
             continue
         datos = charts.calcular_datos_grafico(req, ctx.df_reciente, ctx.df_comparativo, ctx.semanas_grafico)
+        if _datos_vacios(datos):
+            logger.info("grafico sin datos: %s", req)
+            resueltos.append(
+                {
+                    "titulo": g.get("title", ""),
+                    "error": "No hay datos para esta combinación en el período analizado.",
+                }
+            )
+            continue
         resueltos.append({"titulo": g.get("title", ""), "solicitud": req, "datos": datos})
     return resueltos
 
@@ -290,6 +365,23 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
     elegido = _elegir_hallazgo_por_palabras_clave(pregunta, hallazgos)
     serie_str = ", ".join(f"{v:,.0f}".replace(",", ".") for v in elegido["evolucion_semanal"])
 
+    grafico_linea = {
+        "titulo": "Evolución semanal — usd",
+        "solicitud": {"chart_type": "line", "metric": "usd", "group_by": "semana", "filters": {}, "comparison": "ninguna"},
+        "datos": {
+            "tipo": "line",
+            "series": [
+                {
+                    "nombre": describir_segmento(elegido["segmento"]),
+                    "datos": [
+                        {"semana": s, "valor": float(v)}
+                        for s, v in zip(elegido["semanas_grafico"], elegido["evolucion_semanal"])
+                    ],
+                }
+            ],
+        },
+    }
+
     return {
         "origen": "determinista",
         "que_ocurrio": elegido["que_ocurrio"],
@@ -302,7 +394,7 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
         "nivel_evidencia": elegido["nivel_evidencia"],
         "limitaciones": (nota + " " + "; ".join(elegido["limitaciones"])).strip(),
         "hay_causa_dominante": elegido["tipo"] in ("concentrado", "tendencia_persistente", "anomalia"),
-        "graficos": [],
+        "graficos": [grafico_linea],
         "ranking": [],
     }
 

@@ -38,10 +38,16 @@ app.add_middleware(
 SAMPLE_CSV_PATH = Path(__file__).parent.parent / "sample-data" / "pedidos_demo.csv"
 
 
+class HistorialItem(BaseModel):
+    pregunta: str
+    respuesta_resumen: str
+
+
 class ChatRequest(BaseModel):
     run_id: str
     pregunta: str
     contexto_seleccionado: dict | None = None
+    historial: list[HistorialItem] = []
 
 
 class ChartRequestBody(BaseModel):
@@ -226,7 +232,10 @@ def chat(body: ChatRequest) -> dict:
         df_comparativo=run.df_comparativo,
         semanas_grafico=run.semanas_grafico,
         semanas_historico=run.semanas_historico,
+        resumen_total=run.resumen_periodo,
     )
-    respuesta = assistant.responder(body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones)
+    logger.info("chat: run_id=%s pregunta=%r historial=%d contexto=%s", body.run_id, body.pregunta, len(body.historial), bool(body.contexto_seleccionado))
+    historial = [{"pregunta": h.pregunta, "respuesta_resumen": h.respuesta_resumen} for h in body.historial]
+    respuesta = assistant.responder(body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones, historial)
     supabase_client.guardar_conversacion(body.run_id, body.pregunta, respuesta)
     return respuesta
