@@ -1,71 +1,55 @@
 # Estructura de la presentación
 
-8 diapositivas centradas en el proceso de construcción, la lógica del sistema y por qué se
-eligió cada herramienta — no un pitch de producto genérico.
+Referencia rápida de las 10 diapositivas. El archivo real, con diseño y notas para el
+expositor, es [`presentacion_nexo_ia.pptx`](presentacion_nexo_ia.pptx) /
+[`.pdf`](presentacion_nexo_ia.pdf). Audiencia: profesores de Ingeniería.
 
 ---
 
-### 1. Problema
-- **Título:** Los totales esconden la causa real
-- **Mensaje principal:** una variación agregada puede estar concentrada en un cruce muy
-  específico de dimensiones, invisible al mirar el dato de forma agregada.
-- **Contenido mínimo:** un ejemplo numérico corto (ej. "ventas -12%, pero -61% en una sola
-  combinación sucursal × familia").
-- **Visual sugerido:** captura del KPI de USD del dashboard junto a un hallazgo concentrado del
-  Centro de Hallazgos.
+### 1. Portada
+Nexo IA — Asistente inteligente para análisis comercial. *"Python calcula. La inteligencia
+artificial interpreta."* Datos de alumno/padrón/materia/año (completar antes de exponer) y
+stack principal.
 
-### 2. La lógica del sistema
-- **Título:** Python calcula, la IA interpreta
-- **Mensaje principal:** el sistema separa estrictamente el cómputo (siempre determinístico) de
-  la interpretación en lenguaje natural (IA) — la IA nunca calcula ni inventa una cifra.
-- **Contenido mínimo:** flujo de 5 pasos (subir CSV → validar → calcular 31 cruces → IA investiga
-  con herramientas → validador contrasta cada cifra antes de mostrar la respuesta).
-- **Visual sugerido:** diagrama de flujo (el mismo del README/decisiones).
+### 2. Problema que resuelve
+Un dashboard tradicional muestra que un indicador cambió; encontrar qué combinación de
+dimensiones lo explica requiere consultas manuales. Contraste: *"Los pedidos disminuyeron"*
+(dashboard tradicional) vs. una conclusión con el segmento exacto (Nexo IA).
 
-### 3. Cómo se construyó
-- **Título:** El orden importó
-- **Mensaje principal:** primero se construyó el motor determinístico completo (validación, 31
-  cruces, hallazgos priorizados) sin ninguna IA — así la app ya era útil y nunca dependió de que
-  la IA funcionara. La capa de IA se agregó encima, como intérprete, no como motor.
-- **Contenido mínimo:** 3 etapas (motor determinístico → capa de IA con tool-calling → validador
-  anti-invención) presentadas en orden.
-- **Visual sugerido:** línea de tiempo simple de 3 pasos.
+### 3. Solución propuesta
+Flujo de 6 pasos: CSV → Validación → Motor Python → Detección de patrones → IA → Conclusión y
+gráficos. La IA no recibe la base completa ni calcula valores por su cuenta.
 
-### 4. Herramientas utilizadas y por qué
-- **Título:** Por qué cada pieza
-- **Mensaje principal:** cada tecnología se eligió para resolver una restricción concreta del
-  proyecto, no por default.
-- **Contenido mínimo:** tabla con 4-5 filas (Polars, FastAPI, OpenAI tool-calling + JSON Schema,
-  Next.js/TypeScript, ECharts) — para qué se usa y por qué esa y no otra.
-- **Visual sugerido:** la tabla de herramientas de `docs/DECISIONES_DEL_PROYECTO.md`.
+### 4. Lógica del motor Python — *prioritaria*
+16 semanas divididas en 3 ventanas (8 histórico / 4 comparativo / 4 reciente). 12 métricas
+calculadas por cruce. Los pedidos se cuentan por `pedido_id` único, no por fila del CSV.
 
-### 5. Desafíos reales durante el desarrollo
-- **Título:** Lo que se rompió y cómo se encontró
-- **Mensaje principal:** varios bugs reales aparecieron recién al probar con datos reales o en
-  producción, no en el diseño en papel.
-- **Contenido mínimo:** 2-3 ejemplos concretos (ej. un validador que colapsaba comparaciones de
-  varios valores en un solo cruce; la IA inventando valores de filtro inexistentes) y cómo se
-  detectaron y corrigieron.
-- **Visual sugerido:** ninguno, o un extracto corto de log/mensaje de error real.
+### 5. Análisis multivariable — *prioritaria*
+5 dimensiones × 31 combinaciones (5+10+10+5+1). Se calculan todas antes de filtrar; sólo se
+muestran las que tienen impacto, volumen, persistencia, contribución y evidencia suficientes.
 
-### 6. Cómo se evita que la IA invente
-- **Título:** El validador, no el prompt, es la garantía
-- **Mensaje principal:** pedirle "no inventes" a un modelo no alcanza — la garantía real es un
-  validador de código que contrasta cada cifra citada contra el dato calculado por Python.
-- **Contenido mínimo:** 2-3 mecanismos (JSON Schema estricto, contraste numérico con tolerancia
-  del 5%, prohibición de inventar valores de filtro, fallback determinístico sin IA).
-- **Visual sugerido:** esquema simple "IA → validador → respuesta / reintento".
+### 6. Rol de la inteligencia artificial — *prioritaria*
+Dos columnas: qué hace Python (calcula, agrupa, compara, filtra, puntúa, prepara gráficos) vs.
+qué hace la IA (investiga, compara explicaciones, redacta, explica evidencia, elige
+visualización). Reglas de seguridad: no inventa cifras, no calcula sobre texto, no accede al
+CSV completo, no afirma causalidad sin evidencia, indica cuando no hay causa dominante.
 
-### 7. Arquitectura y stack
-- **Título:** Dos capas separadas, un solo contrato
-- **Mensaje principal:** frontend y backend desacoplados; dentro del backend, el cómputo y la
-  interpretación por IA viven en módulos separados y auditables.
-- **Contenido mínimo:** diagrama de arquitectura + lista de tecnologías por capa.
-- **Visual sugerido:** diagrama de `docs/DECISIONES_DEL_PROYECTO.md`.
+### 7. Respuestas verificables mediante gráficos — *prioritaria*
+Ejemplo real (verificado contra el motor, dataset de demo): Sucursal Norte × Familia Alfa,
+USD 27.161 → 10.600 (-61%). La IA pide tipo de gráfico y filtros; Python recalcula los valores
+representados — texto y gráfico nunca se contradicen.
 
-### 8. Resultados y estado actual
-- **Título:** Estado actual
-- **Mensaje principal:** funciona de punta a punta, con limitaciones conocidas y honestas.
-- **Contenido mínimo:** 2-3 logros (tests en verde, deploy funcionando, fallback robusto) + 2-3
-  limitaciones (sin autenticación, historial acotado, depende de la calidad del CSV).
-- **Visual sugerido:** ninguno, slide de cierre.
+### 8. Aplicación y experiencia de usuario
+Captura real de la interfaz (insertar antes de exponer). Señalar: carga de CSV, validación,
+indicadores, evolución semanal, hallazgos priorizados, copiloto, gráficos contextuales.
+
+### 9. Arquitectura y herramientas
+Frontend (Next.js, TypeScript, Tailwind, componentes propios estilo shadcn/ui, ECharts) ·
+Backend (Python, FastAPI, Polars) · Datos opcionales (Supabase) · IA (OpenAI, tool calling,
+JSON Schema) · Infraestructura (Vercel, Render, GitHub). Por qué cada una, no sólo qué es.
+
+### 10. Resultado, limitaciones y conclusión
+Resultado (aplicación funcional, 59 tests en verde, desplegada) · Limitaciones honestas
+(depende de la calidad del CSV, identifica relaciones matemáticas no causas comerciales,
+requiere validación humana) · Conclusión: combina la exactitud de Python con la capacidad
+interpretativa de la IA, con trazabilidad sobre cada conclusión.

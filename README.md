@@ -42,8 +42,8 @@ través de herramientas de solo lectura, y su respuesta final se valida automát
 esos mismos datos antes de mostrarse. Detalle completo en
 [`docs/DECISIONES_DEL_PROYECTO.md`](docs/DECISIONES_DEL_PROYECTO.md).
 
-Material de entrega: [`docs/presentacion.html`](docs/presentacion.html) (presentación, abrir en
-el navegador), [`docs/GUION_VIDEO.md`](docs/GUION_VIDEO.md) y
+Material de entrega: [`docs/presentacion_nexo_ia.pptx`](docs/presentacion_nexo_ia.pptx) /
+[`.pdf`](docs/presentacion_nexo_ia.pdf) (10 diapositivas, con notas para el expositor) y
 [`docs/ESTRUCTURA_PRESENTACION.md`](docs/ESTRUCTURA_PRESENTACION.md).
 
 ## 5. Tecnologías utilizadas
@@ -112,11 +112,7 @@ pytest -q
 **Backend:** Render, capa gratuita — la primera request tras un período de inactividad puede
 tardar hasta ~50s en responder mientras el servicio arranca de nuevo.
 
-## 10. Video explicativo
-
-> `[completar con el link del video]`
-
-## 11. Cómo probar el asistente con el CSV de ejemplo
+## 10. Cómo probar el asistente con el CSV de ejemplo
 
 [`data/datos_demo.csv`](data/datos_demo.csv) es un dataset 100% ficticio (16 semanas, ~670
 filas) pensado para probar el flujo completo: subirlo en pantalla principal (o usar el botón
