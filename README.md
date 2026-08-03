@@ -9,6 +9,10 @@ propias.
 > punta a punta, sin credenciales: la app funciona en modo determinístico (sin OpenAI) y sin
 > Supabase configurado.
 
+**Demo en vivo:** [nexo-ia-eta.vercel.app](https://nexo-ia-eta.vercel.app) (frontend, Vercel) ·
+backend en Render (`nexo-ia-backend`, capa gratuita — la primera request después de un rato de
+inactividad puede tardar hasta ~50s en "despertar" el servicio).
+
 ---
 
 ## 1. Objetivo
