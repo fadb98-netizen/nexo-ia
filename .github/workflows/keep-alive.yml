@@ -1,0 +1,18 @@
+name: Keep backend awake
+
+on:
+  schedule:
+    # Cada 10 minutos. El free tier de Render duerme a los ~15 min de
+    # inactividad, así que este intervalo lo evita sin gastar nada
+    # (GitHub Actions da minutos gratis de sobra para esto).
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /api/health
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            "https://nexo-ia-backend-gisy.onrender.com/api/health"

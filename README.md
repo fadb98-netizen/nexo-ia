@@ -10,8 +10,7 @@ propias.
 > Supabase configurado.
 
 **Demo en vivo:** [nexo-ia-eta.vercel.app](https://nexo-ia-eta.vercel.app) (frontend, Vercel) ·
-backend en Render (`nexo-ia-backend`, capa gratuita — la primera request después de un rato de
-inactividad puede tardar hasta ~50s en "despertar" el servicio).
+backend en Render, capa gratuita, mantenido despierto por un ping automático (ver sección 6).
 
 ---
 
@@ -150,6 +149,14 @@ uvicorn main:app --host 0.0.0.0 --port $PORT
 Configurar ahí las variables de entorno de la sección 4 (`OPENAI_API_KEY`, `SUPABASE_URL`,
 `SUPABASE_KEY` si se usan) y habilitar CORS ya está resuelto en `main.py` (abierto, sin
 credenciales — ver sección 10 de seguridad).
+
+**Nota sobre el plan gratuito de Render:** el free tier duerme el servicio tras ~15 minutos
+sin tráfico; la primera request después de eso tarda hasta ~50s en responder mientras arranca
+de nuevo. En vez de pasar a un plan pago, este repo incluye
+[`.github/workflows/keep-alive.yml`](.github/workflows/keep-alive.yml): un workflow de GitHub
+Actions (gratis) que le pega a `/api/health` cada 10 minutos para que nunca llegue a dormirse.
+Se activa solo al pushear este archivo — no hace falta configurar nada más. Si el backend se
+redeploya con otra URL, actualizar la URL dentro de ese workflow.
 
 ---
 
