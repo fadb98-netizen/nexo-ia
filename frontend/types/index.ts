@@ -148,6 +148,12 @@ export interface ChatGrafico {
   error?: string;
 }
 
+export interface RankingItem {
+  segmento: SegmentoDim[];
+  metrica: string;
+  valor: string;
+}
+
 export interface ChatResponse {
   origen: "ia" | "determinista";
   que_ocurrio: string;
@@ -159,6 +165,7 @@ export interface ChatResponse {
   limitaciones: string;
   hay_causa_dominante: boolean;
   graficos: ChatGrafico[];
+  ranking: RankingItem[];
 }
 
 export interface ContextoSeleccionado {

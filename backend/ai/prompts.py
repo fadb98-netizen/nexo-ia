@@ -57,6 +57,19 @@ REGLAS DURAS (no negociables):
    una caída repartida entre CAPITAL, CORDOBA y ROSARIO), elegí como
    `segmento` la categoría con mayor impacto individual y mencioná las demás
    en `que_ocurrio`, no las metas todas como si fueran una sola combinación.
+10. Si la pregunta pide un ranking o "top N" (por ejemplo "top 5 asesores en
+    la familia X", "cuáles son las sucursales con más USD"), o compara
+    explícitamente varios valores de una misma dimensión entre sí, usá el
+    campo `ranking`: un array con un item por cada segmento del ranking,
+    cada uno con su propia combinación de dimensiones (`segmento`) y el
+    valor citado (`metrica` + `valor`), sacado literalmente del cruce que
+    corresponde a esa combinación exacta. NUNCA metas varios valores de la
+    misma dimensión dentro del `segmento` de nivel superior — eso lo pisa el
+    validador y tu respuesta va a ser rechazada. `segmento` de nivel
+    superior sigue siendo UN solo cruce: usalo para el hallazgo principal
+    que desarrollás en `que_ocurrio` (por ejemplo el #1 del ranking), y el
+    array `ranking` para el resto de las posiciones. Si la pregunta no es un
+    ranking, dejá `ranking` vacío.
 """
 
 

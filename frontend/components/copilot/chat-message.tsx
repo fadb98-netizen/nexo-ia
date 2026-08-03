@@ -51,6 +51,24 @@ export function AssistantResponse({ respuesta }: { respuesta: ChatResponse }) {
         </div>
       )}
 
+      {respuesta.ranking.length > 0 && (
+        <table className="w-full border-collapse text-[11px]">
+          <tbody>
+            {respuesta.ranking.map((item, i) => (
+              <tr key={i} className="border-b border-border-subtle last:border-0">
+                <td className="py-1 pr-2 text-fg-subtle">{i + 1}.</td>
+                <td className="py-1 pr-2 text-fg">
+                  {item.segmento.map((s) => s.valor).join(" × ")}
+                </td>
+                <td className="py-1 text-right tabular text-fg-muted">
+                  {item.metrica}: {item.valor}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
       <p className="text-xs leading-relaxed text-fg-subtle">{respuesta.evolucion_semanal}</p>
 
       {respuesta.limitaciones && (

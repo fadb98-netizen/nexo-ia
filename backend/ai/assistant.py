@@ -18,6 +18,16 @@ MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 MAX_RONDAS_HERRAMIENTAS = 6
 MAX_REINTENTOS_VALIDACION = 1
 
+# Campos numéricos de un cruce que el ranking puede citar. Es una lista
+# cerrada a propósito: así el validador puede leer cruce_citado[metrica]
+# directamente y comparar contra el valor citado, sin parsers de texto libre.
+CAMPOS_RANKING_VALIDOS = [
+    "usd_actual", "usd_anterior", "diferencia_absoluta", "variacion_pct",
+    "pedidos_actual", "pedidos_anterior", "clientes_actual", "clientes_anterior",
+    "ticket_actual", "ticket_anterior", "participacion_pct", "contribucion_pct",
+    "posiciones_por_pedido_actual", "posiciones_por_pedido_anterior",
+]
+
 RESPUESTA_JSON_SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -36,6 +46,7 @@ RESPUESTA_JSON_SCHEMA = {
                 "limitaciones",
                 "hay_causa_dominante",
                 "graficos",
+                "ranking",
             ],
             "properties": {
                 "que_ocurrio": {"type": "string"},
@@ -93,6 +104,37 @@ RESPUESTA_JSON_SCHEMA = {
                             },
                             "comparison": {"type": "string"},
                             "title": {"type": "string"},
+                        },
+                    },
+                },
+                "ranking": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "description": (
+                        "Para preguntas de tipo 'top N' o que comparan varios segmentos a la "
+                        "vez: un item por segmento, cada uno con su propia combinación de "
+                        "dimensiones. NO usar 'segmento' para esto — 'segmento' es sólo la "
+                        "combinación principal que se explica en que_ocurrio."
+                    ),
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["segmento", "metrica", "valor"],
+                        "properties": {
+                            "segmento": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["dimension", "valor"],
+                                    "properties": {
+                                        "dimension": {"type": "string", "enum": DIMENSIONES},
+                                        "valor": {"type": "string"},
+                                    },
+                                },
+                            },
+                            "metrica": {"type": "string", "enum": CAMPOS_RANKING_VALIDOS},
+                            "valor": {"type": "string"},
                         },
                     },
                 },
@@ -242,6 +284,7 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
             "limitaciones": nota,
             "hay_causa_dominante": False,
             "graficos": [],
+            "ranking": [],
         }
 
     elegido = _elegir_hallazgo_por_palabras_clave(pregunta, hallazgos)
@@ -260,6 +303,7 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
         "limitaciones": (nota + " " + "; ".join(elegido["limitaciones"])).strip(),
         "hay_causa_dominante": elegido["tipo"] in ("concentrado", "tendencia_persistente", "anomalia"),
         "graficos": [],
+        "ranking": [],
     }
 
 

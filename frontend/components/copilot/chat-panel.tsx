@@ -73,6 +73,7 @@ export function ChatPanel({
                     limitaciones: err instanceof Error ? err.message : "Error desconocido.",
                     hay_causa_dominante: false,
                     graficos: [],
+                    ranking: [],
                   },
                 }
               : m

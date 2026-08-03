@@ -70,6 +70,35 @@ def _hay_cruce_mas_profundo_no_mencionado(cruce: dict, cruces: list[dict]) -> bo
     return False
 
 
+def _validar_ranking(ranking: list[dict], cruces_disponibles: list[dict]) -> list[str]:
+    problemas: list[str] = []
+    for item in ranking:
+        segmento_item = item.get("segmento") or []
+        metrica = item.get("metrica")
+        valor_citado = _extraer_numero(str(item.get("valor", "")))
+        cruce = _buscar_cruce(segmento_item, cruces_disponibles)
+        if cruce is None:
+            problemas.append(
+                f"Un ítem del ranking cita una combinación ({segmento_item}) que no corresponde a "
+                "ningún cruce calculado por Python: posible invención."
+            )
+            continue
+        if valor_citado is None or metrica not in cruce or not isinstance(cruce[metrica], (int, float)):
+            problemas.append(
+                f"Un ítem del ranking para {segmento_item} no trae un valor numérico verificable "
+                f"para la métrica '{metrica}'."
+            )
+            continue
+        real = float(cruce[metrica])
+        tolerancia = max(abs(real) * 0.05, 1.0)
+        if abs(abs(valor_citado) - abs(real)) > tolerancia:
+            problemas.append(
+                f"El ranking cita '{metrica}'={valor_citado} para {segmento_item}, pero el valor "
+                f"real calculado es {real}."
+            )
+    return problemas
+
+
 def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[bool, list[str]]:
     problemas: list[str] = []
 
@@ -78,6 +107,7 @@ def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[
     cuanto_explica = respuesta.get("cuanto_explica") or ""
     evolucion = respuesta.get("evolucion_semanal") or ""
     graficos = respuesta.get("graficos") or []
+    ranking = respuesta.get("ranking") or []
 
     if not segmento:
         problemas.append("No especifica ninguna combinación de dimensiones (segmento vacío).")
@@ -115,7 +145,10 @@ def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[
                         f"valor real calculado ({real})."
                     )
 
-        if _hay_cruce_mas_profundo_no_mencionado(cruce_citado, cruces_disponibles):
+        # Con ranking no vacío la pregunta es un "top N" dentro de una misma
+        # dimensión (ej. top asesores) — profundizar más dimensiones sobre el
+        # #1 del ranking no tiene sentido para ese tipo de pregunta.
+        if not ranking and _hay_cruce_mas_profundo_no_mencionado(cruce_citado, cruces_disponibles):
             problemas.append(
                 "Existe un cruce más profundo y con más contribución que el citado, y la respuesta "
                 "no lo investigó: profundidad insuficiente."
@@ -126,5 +159,9 @@ def validar_respuesta(respuesta: dict, cruces_disponibles: list[dict]) -> tuple[
             problemas.append(
                 "Afirma que hay una causa dominante pero la contribución del segmento citado es mínima."
             )
+
+    if len(ranking) > 10:
+        problemas.append("El ranking trae más de 10 ítems.")
+    problemas.extend(_validar_ranking(ranking, cruces_disponibles))
 
     return (len(problemas) == 0), problemas
