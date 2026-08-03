@@ -70,6 +70,15 @@ REGLAS DURAS (no negociables):
     que desarrollás en `que_ocurrio` (por ejemplo el #1 del ranking), y el
     array `ranking` para el resto de las posiciones. Si la pregunta no es un
     ranking, dejá `ranking` vacío.
+11. Todo campo `valor` que cites (en `metricas_respaldo`, en `ranking`, o en
+    cualquier otro lado) tiene que ser el número EXACTO devuelto por la
+    herramienta, copiado tal cual, en notación estándar simple: sólo dígitos
+    y como mucho un punto decimal (ej. `611832.37`). NUNCA uses coma como
+    separador decimal ni punto como separador de miles — eso hace que tu cita
+    no coincida con el valor real y se rechace tu respuesta entera. Si el
+    valor de la herramienta es `611832.37`, citalo exactamente como
+    `611832.37`, nunca como `611.832,37` ni `611,83237` ni ninguna otra
+    variante.
 """
 
 
