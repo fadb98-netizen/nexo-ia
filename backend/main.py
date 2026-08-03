@@ -20,7 +20,7 @@ import store
 import supabase_client
 from ai import assistant, tools as ai_tools
 from config import DIMENSIONES, MAX_HALLAZGOS, MIN_HALLAZGOS
-from core import charts, combinations, evidence, loader, metrics, patterns, periods, validator
+from core import charts, combinations, loader, metrics, patterns, periods, validator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nexo_ia")
