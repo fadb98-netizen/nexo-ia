@@ -75,5 +75,7 @@ MAX_HALLAZGOS = 5
 MAX_FILE_SIZE_MB = 25
 ALLOWED_EXTENSIONS = {".csv"}
 
-# --- Valores válidos de ABC (si aparece un valor fuera de esta lista, se marca como inválido) ---
-ABC_VALIDOS = {"A", "B", "C"}
+# Nota: no hay una lista fija de valores válidos de abc_cliente. La
+# clasificación ABC varía por negocio — se vio en producción que Famiq usa un
+# esquema de 16 códigos (A0-A3, AN, B, C, N, P, P0-P3, PN, R, X), no sólo
+# A/B/C. El validador sólo exige que la columna no esté vacía.

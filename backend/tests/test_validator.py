@@ -36,11 +36,25 @@ def test_usd_negativo_se_descarta():
     assert reporte.valores_invalidos == 1
 
 
-def test_abc_invalido_se_descarta():
-    extra = "2024-03-04,2024-03-04,P2,C2,CAPITAL,A1,CONSTRUCCION,CH304,Z,100,500,2\n"
+def test_abc_con_esquema_rico_no_se_descarta():
+    """Regresión: la clasificación ABC real de Famiq usa códigos como A0-A3,
+    AN, P0-P3, PN, N, R, X — no sólo A/B/C. Un validador que sólo aceptara
+    A/B/C descartaba en producción el 79% de las filas de un CSV real."""
+    extra = (
+        "2024-03-04,2024-03-04,P2,C2,CAPITAL,ASESOR1,CONSTRUCCION,CH304,A2,100,500,2\n"
+        "2024-03-04,2024-03-04,P3,C3,CAPITAL,ASESOR1,CONSTRUCCION,CH304,PN,100,500,2\n"
+    )
     df, reporte = validator.validar_y_limpiar(_cargar(_csv_valido_con(extra)))
-    assert reporte.filas_validas == 2
-    assert reporte.valores_invalidos == 1
+    assert reporte.filas_validas == 4
+    assert reporte.valores_invalidos == 0
+    assert set(df["abc_cliente"].to_list()) >= {"A", "A2", "PN"}
+
+
+def test_abc_se_normaliza_a_mayuscula():
+    extra = "2024-03-04,2024-03-04,P2,C2,CAPITAL,ASESOR1,CONSTRUCCION,CH304,a2,100,500,2\n"
+    df, reporte = validator.validar_y_limpiar(_cargar(_csv_valido_con(extra)))
+    fila = df.filter(df["pedido_id"] == "P2")
+    assert fila["abc_cliente"].to_list() == ["A2"]
 
 
 def test_fila_con_columna_obligatoria_vacia_se_descarta():

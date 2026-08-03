@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 import polars as pl
 
 from config import (
-    ABC_VALIDOS,
     COL_ABC_CLIENTE,
     COL_CLIENTE_ID,
     COL_FECHA_PEDIDO,
@@ -129,12 +128,12 @@ def validar_y_limpiar(df_raw: pl.DataFrame) -> tuple[pl.DataFrame, ValidationRep
         report.valores_invalidos += semanas_invalidas
         df = df.filter(pl.col(COL_SEMANA).is_not_null())
 
-    # 6) ABC de cliente: normalizar a mayúscula y validar contra el set permitido.
+    # 6) ABC de cliente: normalizar a mayúscula. No se valida contra una lista
+    # fija de valores — la clasificación ABC real varía por negocio (algunos
+    # usan sólo A/B/C, otros esquemas mucho más ricos como A0-A3/AN/B/C/N/
+    # P/P0-P3/PN/R/X). Ya se exige no-vacío en el paso 2 (columnas de texto
+    # obligatorias); eso alcanza para considerarlo un valor válido.
     df = df.with_columns(pl.col(COL_ABC_CLIENTE).str.to_uppercase().alias(COL_ABC_CLIENTE))
-    mask_abc_ok = df[COL_ABC_CLIENTE].is_in(list(ABC_VALIDOS))
-    abc_invalidos = df.height - df.filter(mask_abc_ok).height
-    report.valores_invalidos += abc_invalidos
-    df = df.filter(mask_abc_ok)
 
     # 7) Duplicados: fila 100% idéntica en todas las columnas.
     antes = df.height
@@ -179,7 +178,7 @@ def validar_y_limpiar(df_raw: pl.DataFrame) -> tuple[pl.DataFrame, ValidationRep
     if report.valores_invalidos > 0:
         report.advertencias.append(
             f"Se descartaron {report.valores_invalidos} filas con valores "
-            "numéricos, fechas o ABC inválidos."
+            "numéricos o fechas inválidos."
         )
 
     return df, report

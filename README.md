@@ -279,6 +279,13 @@ IA nunca genera un valor de gráfico.
   datos reales, no que siempre sea *la misma* respuesta.
 - **Validación cruzada de cifras con tolerancia del 5%**, no exacta — deja pasar redondeos de
   la IA al parafrasear un número, no cualquier invención.
+- **`abc_cliente` no tiene un dominio de valores fijo.** Se probó en producción contra un CSV
+  real y se descubrió que la clasificación ABC de Famiq no es sólo A/B/C — usa 16 códigos
+  (A0-A3, AN, B, C, N, P, P0-P3, PN, R, X). Una primera versión validaba contra un whitelist
+  `{A,B,C}` y descartaba silenciosamente el 79% de las filas de una base real. Se corrigió
+  eliminando el whitelist: el validador sólo exige que la columna no esté vacía, igual que el
+  resto de las columnas categóricas. Si se reutiliza este motor sobre datos de otro negocio,
+  no asumir tampoco ningún otro dominio fijo de valores sin verificarlo primero.
 - **Pedidos/Ofertas vs. Facturas**: este proyecto asume que el CSV ya viene con una sola
   granularidad de documento (pedidos). No mezcla tipos de documento como sí hace el mart de
   origen — si se reutiliza este motor sobre datos reales de un mart más amplio, hay que
@@ -334,7 +341,7 @@ nexo-ia/
 ## 14. Criterios de aceptación — estado
 
 - [x] Cargar un CSV real y uno sintético (demo).
-- [x] Validación completa (columnas, tipos, fechas, faltantes, duplicados, semanas, ABC).
+- [x] Validación completa (columnas, tipos, fechas, faltantes, duplicados, semanas).
 - [x] Las 31 combinaciones se calculan siempre, sin excepción, antes de filtrar.
 - [x] Hallazgos priorizados (3-5) con score, tipo de patrón y nivel de evidencia.
 - [x] La IA responde con evidencia verificable o cae a modo determinístico — nunca inventa.
