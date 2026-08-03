@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nexo IA — Presentación</title>
+<style>
+  :root {
+    --bg: #0c0f14;
+    --bg-elevated: #12161d;
+    --bg-inset: #171c25;
+    --border: #232a35;
+    --border-soft: #1a2029;
+    --fg: #e8ecf2;
+    --fg-muted: #9aa4b2;
+    --fg-subtle: #616b7a;
+    --accent: #2fc2ba;
+    --accent-dim: #1c7d78;
+    --positive: #4fb477;
+    --negative: #e2665a;
+    --warning: #e2a63c;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f6f7f9;
+    --bg-elevated: #ffffff;
+    --bg-inset: #eef0f3;
+    --border: #dde1e7;
+    --border-soft: #e7e9ed;
+    --fg: #12161d;
+    --fg-muted: #565f6c;
+    --fg-subtle: #8992a0;
+    --accent: #0d8f89;
+    --accent-dim: #0a706b;
+    --positive: #2f8f57;
+    --negative: #c0392b;
+    --warning: #b9800f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f6f7f9;
+      --bg-elevated: #ffffff;
+      --bg-inset: #eef0f3;
+      --border: #dde1e7;
+      --border-soft: #e7e9ed;
+      --fg: #12161d;
+      --fg-muted: #565f6c;
+      --fg-subtle: #8992a0;
+      --accent: #0d8f89;
+      --accent-dim: #0a706b;
+      --positive: #2f8f57;
+      --negative: #c0392b;
+      --warning: #b9800f;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-snap-type: y proximity; scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.5;
+  }
+  ::selection { background: var(--accent); color: #06110f; }
+
+  .deck-nav {
+    position: fixed;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    z-index: 50;
+  }
+  .deck-nav a {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    display: block;
+    transition: background 0.2s, transform 0.2s;
+  }
+  .deck-nav a:hover, .deck-nav a:focus-visible { background: var(--accent); transform: scale(1.3); outline: none; }
+
+  .slide {
+    min-height: 100svh;
+    padding: clamp(28px, 5vw, 64px) clamp(20px, 8vw, 96px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    scroll-snap-align: start;
+    border-bottom: 1px solid var(--border-soft);
+    position: relative;
+    overflow: hidden;
+  }
+  .slide-inner { max-width: 1040px; margin: 0 auto; width: 100%; }
+
+  .tag {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .tag::before { content: ""; width: 16px; height: 1px; background: var(--accent); }
+
+  h1, h2 {
+    font-family: var(--mono);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 18px;
+  }
+  h1 { font-size: clamp(28px, 4.2vw, 48px); line-height: 1.1; }
+  h2 { font-size: clamp(22px, 3vw, 32px); line-height: 1.15; }
+
+  .lede { font-size: clamp(16px, 1.6vw, 19px); color: var(--fg-muted); max-width: 64ch; margin: 0 0 8px; }
+  p { max-width: 68ch; }
+
+  .grid-2 { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(24px, 4vw, 56px); align-items: center; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 820px) { .grid-2 { grid-template-columns: 1fr; } .grid-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .stat-num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: clamp(22px, 2.6vw, 30px);
+    font-weight: 700;
+  }
+  .stat-label { font-size: 12px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 6px; }
+  .delta-neg { color: var(--negative); }
+  .delta-pos { color: var(--positive); }
+
+  ul.plain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  ul.plain li { padding-left: 22px; position: relative; color: var(--fg-muted); font-size: 15px; }
+  ul.plain li::before { content: "›"; position: absolute; left: 0; color: var(--accent); font-family: var(--mono); font-weight: 700; }
+  ul.plain b { color: var(--fg); font-weight: 600; }
+
+  code, .mono { font-family: var(--mono); }
+
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-family: var(--mono); font-size: 12.5px; }
+  .flow .node { border: 1px solid var(--border); background: var(--bg-elevated); padding: 8px 12px; border-radius: 8px; }
+  .flow .node.on { border-color: var(--accent); color: var(--accent); }
+  .flow .arrow { color: var(--fg-subtle); }
+
+  .timeline { display: flex; flex-direction: column; gap: 0; margin-top: 30px; }
+  .tl-item { display: grid; grid-template-columns: 28px 1fr; gap: 18px; padding-bottom: 26px; position: relative; }
+  .tl-item:last-child { padding-bottom: 0; }
+  .tl-dot { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--accent); color: var(--accent);
+    font-family: var(--mono); font-size: 12px; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated); z-index: 1; }
+  .tl-item:not(:last-child)::before { content: ""; position: absolute; left: 13px; top: 28px; bottom: -2px; width: 1px; background: var(--border); }
+  .tl-title { font-weight: 600; margin-bottom: 4px; }
+  .tl-body { color: var(--fg-muted); font-size: 14px; max-width: 60ch; }
+
+  .bug-card { border-left: 2px solid var(--warning); background: var(--bg-elevated); border-radius: 0 8px 8px 0; padding: 14px 18px; margin-bottom: 14px; }
+  .bug-card .b-title { font-weight: 600; margin-bottom: 4px; }
+  .bug-card .b-fix { font-size: 13px; color: var(--fg-muted); margin-top: 6px; }
+  .bug-card .b-fix b { color: var(--accent); font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+  th { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-subtle); font-weight: 600; }
+  td.mono-cell { font-family: var(--mono); white-space: nowrap; }
+  td.why { color: var(--fg-muted); }
+
+  .mock {
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 12px;
+  }
+  .mock-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+  .mock-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+
+  .footer-note { font-family: var(--mono); font-size: 11px; color: var(--fg-subtle); margin-top: 30px; }
+  .slide-index { position: absolute; top: clamp(20px,5vw,40px); right: clamp(20px, 8vw, 96px); font-family: var(--mono); font-size: 12px; color: var(--fg-subtle); }
+
+  .theme-toggle {
+    position: fixed; top: 16px; left: 16px; z-index: 60;
+    background: var(--bg-elevated); border: 1px solid var(--border); color: var(--fg-muted);
+    font-family: var(--mono); font-size: 11px; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  }
+
+  @media print {
+    .deck-nav, .theme-toggle { display: none; }
+    .slide { min-height: 100vh; page-break-after: always; border-bottom: none; }
+    html { scroll-snap-type: none; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .slide-inner { animation: rise 0.5s ease both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  }
+</style>
+</head>
+<body>
+
+<button class="theme-toggle" id="themeToggle" type="button">tema</button>
+<nav class="deck-nav" aria-label="Navegación de diapositivas">
+  <a href="#s1" title="1. Problema"></a>
+  <a href="#s2" title="2. Lógica del sistema"></a>
+  <a href="#s3" title="3. Cómo se construyó"></a>
+  <a href="#s4" title="4. Herramientas y por qué"></a>
+  <a href="#s5" title="5. Desafíos reales"></a>
+  <a href="#s6" title="6. Cómo se evita que la IA invente"></a>
+  <a href="#s7" title="7. Arquitectura y stack"></a>
+  <a href="#s8" title="8. Resultados"></a>
+</nav>
+
+<section class="slide" id="s1">
+  <span class="slide-index">01 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Problema</span>
+    <h1>El total nunca dice por qué cayó.</h1>
+    <p class="lede">Una variación agregada casi nunca está repartida de forma pareja. Suele estar
+    concentrada en un cruce muy específico — una sucursal, con una familia de producto, en un
+    sector — invisible al mirar el dato consolidado.</p>
+    <div class="grid-2" style="margin-top:32px; align-items:start;">
+      <div class="card">
+        <div class="stat-label">Ventas totales, período reciente</div>
+        <div class="stat-num delta-neg">-12,1%</div>
+        <p style="margin-top:10px; max-width:none; color:var(--fg-muted); font-size:14px;">
+          US$ 2.176.220 vs. US$ 2.477.074 del período anterior.
+        </p>
+      </div>
+      <div class="card" style="border-color:var(--negative);">
+        <div class="stat-label">Un cruce puntual dentro de ese total</div>
+        <div class="stat-num delta-neg">-61%</div>
+        <p style="margin-top:10px; max-width:none; color:var(--fg-muted); font-size:14px;">
+          Sucursal Norte × Familia Alfa, mismo período — ahí está la variación real, no en el
+          negocio entero.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="s2">
+  <span class="slide-index">02 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">La lógica del sistema</span>
+    <h1>Python calcula. La IA interpreta.</h1>
+    <p class="lede">Regla de diseño no negociable: la IA nunca ve el CSV crudo ni calcula una
+    cifra por su cuenta. Sólo investiga sobre números que Python ya calculó, y todo lo que dice
+    se vuelve a contrastar antes de mostrarse.</p>
+    <div class="flow" style="margin-top:32px;">
+      <span class="node">Subir CSV</span>
+      <span class="arrow">→</span>
+      <span class="node">Validar y tipar</span>
+      <span class="arrow">→</span>
+      <span class="node">Calcular las 31 combinaciones</span>
+      <span class="arrow">→</span>
+      <span class="node">IA investiga con herramientas</span>
+      <span class="arrow">→</span>
+      <span class="node on">Validador contrasta cada cifra</span>
+    </div>
+    <p style="margin-top:22px; color:var(--fg-muted); font-size:14px;">Si una cifra citada no
+    coincide con el dato real, o el modelo pide un filtro que no existe, la respuesta se rechaza
+    y se reintenta automáticamente — nunca llega a pantalla sin pasar por ese control.</p>
+  </div>
+</section>
+
+<section class="slide" id="s3">
+  <span class="slide-index">03 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Cómo se construyó</span>
+    <h1>El orden importó</h1>
+    <p class="lede">La IA se agregó al final, como intérprete — no como motor. Primero tenía que
+    existir una app útil y correcta sin ella.</p>
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-dot">1</div>
+        <div>
+          <div class="tl-title">Motor determinístico completo</div>
+          <div class="tl-body">Validación de CSV, cálculo exhaustivo de las 31 combinaciones y
+          scoring de hallazgos — sin ninguna IA. La app ya era útil en este punto, y nunca dejó de
+          funcionar sin una clave de OpenAI configurada.</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">2</div>
+        <div>
+          <div class="tl-title">Capa de IA con tool-calling</div>
+          <div class="tl-body">El modelo recibe herramientas de solo lectura sobre los cruces ya
+          calculados y un JSON Schema estricto para su respuesta final — nunca texto libre sin
+          forma.</div>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-dot">3</div>
+        <div>
+          <div class="tl-title">Validador anti-invención</div>
+          <div class="tl-body">Cada cifra que la IA cita se vuelve a comparar, por código, contra
+          el cruce real antes de mostrarse. Se agregó después de ver, en pruebas reales, que un
+          modelo puede citar un número casi correcto pero no exacto.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="s4">
+  <span class="slide-index">04 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Herramientas utilizadas y por qué</span>
+    <h1>Cada pieza resuelve una restricción concreta</h1>
+    <table style="margin-top:22px;">
+      <thead><tr><th>Herramienta</th><th>Para qué</th><th>Por qué esa</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono-cell">Polars</td>
+          <td>Todo el cómputo tabular</td>
+          <td class="why">31 combinaciones sobre miles de filas, repetidas en cada pregunta del
+          copiloto — necesitaba ser rápido, no sólo correcto.</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">FastAPI</td>
+          <td>API del backend</td>
+          <td class="why">Tipado con Pydantic y validación de requests gratis — contratos claros
+          entre frontend y backend sin capa extra.</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">OpenAI<br>tool-calling + JSON Schema</td>
+          <td>Interpretación en lenguaje natural</td>
+          <td class="why">Es lo único que permite forzar una respuesta con forma exacta y
+          verificable — sin eso, no hay nada contra qué validar.</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">Next.js + TypeScript</td>
+          <td>Frontend</td>
+          <td class="why">Tipos compartidos con los contratos del backend — un campo que cambia
+          de forma se detecta en compilación, no en producción.</td>
+        </tr>
+        <tr>
+          <td class="mono-cell">Apache ECharts</td>
+          <td>Gráficos</td>
+          <td class="why">Un solo renderer cubre línea, barras, heatmap y participación — los
+          únicos tipos que la IA puede llegar a pedir.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="slide" id="s5">
+  <span class="slide-index">05 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Desafíos reales durante el desarrollo</span>
+    <h1>Lo que se rompió, y cómo se encontró</h1>
+    <p class="lede" style="margin-bottom:22px;">Los problemas más importantes no aparecieron en el
+    diseño en papel: aparecieron probando con preguntas y datos reales.</p>
+
+    <div class="bug-card">
+      <div class="b-title">Preguntas de "top N" colapsaban en un solo resultado</div>
+      <div style="font-size:13px; color:var(--fg-muted);">El campo que describe el segmento
+      citado sólo podía representar un cruce. Para "¿top 5 asesores en esta familia?", la IA
+      metía los 5 valores ahí adentro y el validador sólo se quedaba con el último — cada
+      respuesta, aunque correcta, se rechazaba por comparar contra el cruce equivocado.</div>
+      <div class="b-fix">Fix: <b>campo `ranking` separado</b>, con un cruce real por posición.</div>
+    </div>
+
+    <div class="bug-card">
+      <div class="b-title">La IA inventaba valores de filtro inexistentes</div>
+      <div style="font-size:13px; color:var(--fg-muted);">Al preguntar por la evolución del total
+      general, el modelo intentaba armar un filtro y a veces adivinaba nombres con forma de
+      sucursal que no existían en los datos, agotando los intentos sin responder.</div>
+      <div class="b-fix">Fix: <b>herramienta dedicada al total</b> + regla explícita de nunca
+      inventar un valor de dimensión no visto antes.</div>
+    </div>
+
+    <div class="bug-card">
+      <div class="b-title">Un esquema de clasificación más rico de lo esperado</div>
+      <div style="font-size:13px; color:var(--fg-muted);">Al validar contra un CSV real de
+      producción, una lista fija de valores válidos para una columna categórica descartaba en
+      silencio la mayoría de las filas — el dato real tenía muchas más categorías que las
+      previstas en el diseño inicial.</div>
+      <div class="b-fix">Fix: <b>no asumir un dominio fijo</b> de valores sin verificarlo contra
+      datos reales primero.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="s6">
+  <span class="slide-index">06 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Cómo se evita que la IA invente</span>
+    <h1>El validador es la garantía — no el prompt</h1>
+    <p class="lede">Pedirle "no inventes" a un modelo no alcanza. La garantía real es código que
+    contrasta cada cifra citada contra el dato que Python ya calculó.</p>
+    <ul class="plain" style="margin-top:26px; max-width:64ch;">
+      <li><b>Salida forzada a JSON Schema estricto</b> — la respuesta siempre tiene una forma
+      exacta, nunca texto libre.</li>
+      <li><b>Contraste numérico con tolerancia del 5%</b> — cada cifra citada se recalcula y se
+      compara contra el cruce real.</li>
+      <li><b>Prohibido inventar valores de filtro</b> — sólo puede usar un valor de dimensión que
+      ya vio en el resultado de una herramienta.</li>
+      <li><b>Fallback determinístico</b> — sin clave de OpenAI, o si la IA no logra una respuesta
+      válida tras reintentar, se muestra el mejor hallazgo calculado por Python. La app nunca se
+      rompe por un problema de la IA.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide" id="s7">
+  <span class="slide-index">07 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Arquitectura y stack</span>
+    <h1>Dos capas separadas, un solo contrato</h1>
+    <div class="grid-2" style="margin-top:28px; align-items:start;">
+      <div class="flow" style="flex-direction:column; align-items:stretch;">
+        <span class="node">Frontend — Next.js / TypeScript</span>
+        <span class="arrow" style="text-align:center;">↕ HTTP</span>
+        <span class="node on">Backend — FastAPI</span>
+        <span class="arrow" style="text-align:center;">↓</span>
+        <span class="node">core/ — cómputo determinístico</span>
+        <span class="node">ai/ — tools · prompts · validador</span>
+        <span class="node">Supabase (opcional) — historial</span>
+      </div>
+      <div class="mock">
+        <div class="mock-bar"><span class="mock-dot"></span><span class="mock-dot"></span><span class="mock-dot"></span></div>
+        <div style="font-family:var(--mono); font-size:11px; color:var(--fg-subtle); margin-bottom:8px;">backend/ai/</div>
+        <ul class="plain" style="gap:8px;">
+          <li style="font-size:12px;"><b>tools.py</b> — herramientas de solo lectura</li>
+          <li style="font-size:12px;"><b>prompts.py</b> — reglas del modelo, en un solo lugar auditable</li>
+          <li style="font-size:12px;"><b>validator.py</b> — contraste contra datos reales</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="s8">
+  <span class="slide-index">08 / 08</span>
+  <div class="slide-inner">
+    <span class="tag">Resultados y estado actual</span>
+    <h1>Funciona de punta a punta</h1>
+    <div class="grid-2" style="margin-top:26px; align-items:start;">
+      <div>
+        <div class="stat-label" style="margin-bottom:10px;">Logrado</div>
+        <ul class="plain">
+          <li>59/59 tests en verde</li>
+          <li>Deploy en producción funcionando</li>
+          <li>Validado con preguntas reales, incluida una sin datos disponibles</li>
+        </ul>
+      </div>
+      <div>
+        <div class="stat-label" style="margin-bottom:10px;">Limitaciones honestas</div>
+        <ul class="plain">
+          <li>Sin autenticación de usuarios (alcance académico)</li>
+          <li>Historial de conversación acotado a 4 intercambios</li>
+          <li>Calidad del análisis depende de la calidad del CSV cargado</li>
+        </ul>
+      </div>
+    </div>
+    <p class="footer-note">nexo-ia-eta.vercel.app</p>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var btn = document.getElementById("themeToggle");
+    var root = document.documentElement;
+    btn.addEventListener("click", function () {
+      var current = root.getAttribute("data-theme");
+      var next = current === "dark" ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+    });
+  })();
+</script>
+</body>
+</html>

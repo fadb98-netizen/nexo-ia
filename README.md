@@ -42,6 +42,10 @@ través de herramientas de solo lectura, y su respuesta final se valida automát
 esos mismos datos antes de mostrarse. Detalle completo en
 [`docs/DECISIONES_DEL_PROYECTO.md`](docs/DECISIONES_DEL_PROYECTO.md).
 
+Material de entrega: [`docs/presentacion.html`](docs/presentacion.html) (presentación, abrir en
+el navegador), [`docs/GUION_VIDEO.md`](docs/GUION_VIDEO.md) y
+[`docs/ESTRUCTURA_PRESENTACION.md`](docs/ESTRUCTURA_PRESENTACION.md).
+
 ## 5. Tecnologías utilizadas
 
 | Capa | Tecnología |
