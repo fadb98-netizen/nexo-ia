@@ -72,15 +72,24 @@ export function ChartRenderer({ data, height = 220 }: { data: ChartData; height?
     const ys = Array.from(new Set(data.celdas.map((c) => c.y)));
     const max = Math.max(1, ...data.celdas.map((c) => c.valor));
     const option: echarts.EChartsOption = {
-      grid: { ...baseGrid(), top: 10 },
+      grid: { ...baseGrid(), top: 10, bottom: 30 },
       tooltip: { ...tooltipBase, position: "top", formatter: (p: any) => `${xs[p.value[0]]} × ${ys[p.value[1]]}<br/>${formatUsd(p.value[2])}` },
       xAxis: { type: "category", data: xs, ...baseAxisStyle(), splitArea: { show: true } },
       yAxis: { type: "category", data: ys, ...baseAxisStyle(), splitArea: { show: true } },
       visualMap: {
+        type: "continuous",
         min: 0,
         max,
-        show: false,
-        inRange: { color: ["#1c1c1c", CHART_COLORS.accent] },
+        show: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 0,
+        itemWidth: 110,
+        itemHeight: 8,
+        text: [formatNumero(max), "0"],
+        textGap: 6,
+        textStyle: { color: CHART_COLORS.fgSubtle, fontSize: 10, fontFamily: CHART_FONT },
+        inRange: { color: CHART_COLORS.sequential },
       },
       series: [
         {
@@ -90,7 +99,7 @@ export function ChartRenderer({ data, height = 220 }: { data: ChartData; height?
         },
       ],
     };
-    return <EChart option={option} height={Math.max(height, ys.length * 28)} />;
+    return <EChart option={option} height={Math.max(height, ys.length * 28) + 26} />;
   }
 
   if (data.tipo === "stacked_100") {
