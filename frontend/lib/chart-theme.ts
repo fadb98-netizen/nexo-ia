@@ -9,11 +9,17 @@ export const CHART_COLORS = {
   negative: "#f87171",
   warning: "#fbbf24",
   categorical: ["#60a5fa", "#34d399", "#fbbf24", "#c084fc", "#f87171", "#22d3ee", "#a3a3a3", "#fb923c"],
-  // Rampa secuencial de un solo tono (azul), oscuro→claro: en dark mode el
-  // extremo oscuro se "hunde" en el fondo (valor bajo) y el extremo claro
-  // resalta (valor alto) — el orden se invierte respecto a una rampa pensada
-  // para fondo claro.
-  sequential: ["#0d366b", "#184f95", "#256abf", "#3987e5", "#6da7ec", "#9ec5f4", "#cde2fb"],
+  // Baldes de un solo tono (azul, el mismo del accent) para heatmaps: los
+  // valores típicos quedan casi indistinguibles del fondo (no llaman la
+  // atención) y el salto se concentra en lo atípico, en vez de un degradé
+  // parejo de 0 a máximo que un solo outlier aplasta.
+  heatmap: {
+    cero: "#161b24",
+    bajo: "#20304a",
+    medio: "#2f4870",
+    alto: "#4d76b8",
+    atipico: "#60a5fa",
+  },
 };
 
 export const CHART_FONT = "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";

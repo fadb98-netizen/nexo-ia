@@ -70,26 +70,44 @@ export function ChartRenderer({ data, height = 220 }: { data: ChartData; height?
   if (data.tipo === "heatmap") {
     const xs = Array.from(new Set(data.celdas.map((c) => c.x)));
     const ys = Array.from(new Set(data.celdas.map((c) => c.y)));
-    const max = Math.max(1, ...data.celdas.map((c) => c.valor));
+
+    // Baldes por percentil (sobre los valores > 0) en vez de un degradé lineal
+    // 0→máximo: con datos muy asimétricos (una combinación domina el resto),
+    // una escala lineal aplasta a casi todas las celdas contra el mismo
+    // extremo. Los cortes por percentil hacen que lo típico se vea uniforme
+    // y sin protagonismo, y reservan el salto de color para lo atípico.
+    const positivos = data.celdas.map((c) => c.valor).filter((v) => v > 0).sort((a, b) => a - b);
+    const maxValor = Math.max(1, ...data.celdas.map((c) => c.valor));
+    const percentil = (p: number) => (positivos.length ? positivos[Math.min(positivos.length - 1, Math.floor(p * positivos.length))] : 0);
+    let p50 = percentil(0.5);
+    let p80 = percentil(0.8);
+    let p95 = percentil(0.95);
+    if (p80 <= p50) p80 = p50 + (maxValor - p50) / 3;
+    if (p95 <= p80) p95 = p80 + (maxValor - p80) / 2;
+
+    const H = CHART_COLORS.heatmap;
     const option: echarts.EChartsOption = {
       grid: { ...baseGrid(), top: 10, bottom: 30 },
       tooltip: { ...tooltipBase, position: "top", formatter: (p: any) => `${xs[p.value[0]]} × ${ys[p.value[1]]}<br/>${formatUsd(p.value[2])}` },
-      xAxis: { type: "category", data: xs, ...baseAxisStyle(), splitArea: { show: true } },
-      yAxis: { type: "category", data: ys, ...baseAxisStyle(), splitArea: { show: true } },
+      xAxis: { type: "category", data: xs, ...baseAxisStyle() },
+      yAxis: { type: "category", data: ys, ...baseAxisStyle() },
       visualMap: {
-        type: "continuous",
-        min: 0,
-        max,
+        type: "piecewise",
         show: true,
         orient: "horizontal",
         left: "center",
         bottom: 0,
-        itemWidth: 110,
-        itemHeight: 8,
-        text: [formatNumero(max), "0"],
-        textGap: 6,
+        itemGap: 8,
+        itemWidth: 12,
+        itemHeight: 12,
         textStyle: { color: CHART_COLORS.fgSubtle, fontSize: 10, fontFamily: CHART_FONT },
-        inRange: { color: CHART_COLORS.sequential },
+        pieces: [
+          { max: 0, color: H.cero, label: "Cero" },
+          { min: 0, max: p50, color: H.bajo, label: "Bajo" },
+          { min: p50, max: p80, color: H.medio, label: "Medio" },
+          { min: p80, max: p95, color: H.alto, label: "Alto" },
+          { min: p95, color: H.atipico, label: "Atípico" },
+        ],
       },
       series: [
         {
