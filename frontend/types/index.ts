@@ -160,6 +160,8 @@ export interface OpcionAclaracion {
   etiqueta: string;
 }
 
+export type ModoAnalisis = "normal" | "profundo";
+
 export interface ChatResponse {
   origen: "ia" | "determinista" | "aclaracion";
   que_ocurrio: string;
@@ -175,6 +177,7 @@ export interface ChatResponse {
   necesita_aclaracion?: boolean;
   pregunta_aclaratoria?: string;
   opciones?: OpcionAclaracion[];
+  modo?: ModoAnalisis;
 }
 
 export interface HistorialItem {

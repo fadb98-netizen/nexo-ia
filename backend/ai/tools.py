@@ -179,7 +179,7 @@ def _filtro_a_dict(filtro: list[dict] | None) -> dict:
     return {f["dimension"]: f["valor"] for f in (filtro or [])}
 
 
-def _cruce_publico(c: dict) -> dict:
+def cruce_publico(c: dict) -> dict:
     """Recorta el cruce interno a lo que tiene sentido mandarle al modelo
     (saca la serie completa cruda del histórico, que no aporta como texto)."""
     return {
@@ -225,7 +225,7 @@ def obtener_tabla_dimension(
         candidatos = [c for c in candidatos if all(c["segmento"].get(k) == v for k, v in filtro_dict.items())]
     candidatos.sort(key=lambda c: abs(c["diferencia_absoluta"]), reverse=True)
 
-    resultado = {"dimension": dimension, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:top_n]]}
+    resultado = {"dimension": dimension, "filtro": filtro_dict, "filas": [cruce_publico(c) for c in candidatos[:top_n]]}
     if filtro_dict and not candidatos:
         resultado["nota"] = (
             "No hay datos para esa dimensión con ese filtro. Si adivinaste el valor del "
@@ -268,7 +268,7 @@ def desglosar_variacion(ctx: ContextoHerramientas, dimensiones: list[str], filtr
             ),
         }
 
-    resultado = {"dimensiones": dims_pedidas, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:15]]}
+    resultado = {"dimensiones": dims_pedidas, "filtro": filtro_dict, "filas": [cruce_publico(c) for c in candidatos[:15]]}
     if dims_busqueda != dims_pedidas:
         extra = [d for d in filtro_dict if d not in dims_pedidas]
         resultado["nota"] = (

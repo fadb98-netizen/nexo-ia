@@ -200,11 +200,32 @@ def prompt_pregunta(
     contexto_seleccionado: dict | None,
     anotaciones: list[str],
     scope_activo: dict | None = None,
+    exploracion_profunda: list[dict] | None = None,
 ) -> str:
     partes = [
         f"Pregunta ACTUAL del usuario, la que tenés que responder ahora (tiene prioridad "
         f"sobre cualquier mensaje anterior de la conversación): {pregunta}"
     ]
+    if exploracion_profunda is not None:
+        partes.append(
+            "MODO ANÁLISIS PROFUNDO: el usuario pidió explícitamente un análisis más profundo "
+            "que uno normal. Python ya hizo la exploración exhaustiva por vos: en el bloque de "
+            "abajo tenés los cruces de 2 a 4 dimensiones combinadas MÁS RELEVANTES dentro del "
+            "scope activo, ya ordenados por contribución — no hace falta que empieces "
+            "desglosando de a una dimensión para descubrirlos, ya están acá. Tu trabajo ahora es "
+            "sintetizar en profundidad: identificá los 2-3 patrones más importantes de esta "
+            "lista, contrastalos entre sí (¿se explican por lo mismo o son fenómenos "
+            "independientes?), fijate qué driver los explica (pedidos, ticket o posiciones — "
+            "ya calculado en el campo `driver` de cada uno) y si hay tendencia o anomalía "
+            "respecto de su propio histórico. Podés seguir llamando herramientas para "
+            "profundizar un hallazgo puntual de esta lista (por ejemplo "
+            "consultar_tendencia_historica sobre el más prometedor), pero partí de esta "
+            "evidencia — no la ignores ni vuelvas a explorar desde cero. Tu conclusión final "
+            "tiene que reflejar un análisis más rico que el de una consulta normal, no sólo el "
+            "primer cruce de la lista.\n\n"
+            "Cruces relevantes ya calculados dentro del scope (ordenados por |contribución|): "
+            + json.dumps(exploracion_profunda, ensure_ascii=False)
+        )
     if scope_activo:
         partes.append(
             "SCOPE ACTIVO ya resuelto para esta pregunta: " + json.dumps(scope_activo, ensure_ascii=False) + ". "

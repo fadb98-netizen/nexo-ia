@@ -1,4 +1,4 @@
-import type { ChartData, ChatResponse, ContextoSeleccionado, HistorialItem, UploadResponse } from "@/types";
+import type { ChartData, ChatResponse, ContextoSeleccionado, HistorialItem, ModoAnalisis, UploadResponse } from "@/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -40,7 +40,8 @@ export async function preguntar(
   pregunta: string,
   contextoSeleccionado?: ContextoSeleccionado | null,
   historial?: HistorialItem[],
-  aclaracionElegida?: { dimension: string; valor: string } | null
+  aclaracionElegida?: { dimension: string; valor: string } | null,
+  modo?: ModoAnalisis
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
@@ -51,6 +52,7 @@ export async function preguntar(
       contexto_seleccionado: contextoSeleccionado ?? null,
       historial: historial ?? [],
       aclaracion_elegida: aclaracionElegida ?? null,
+      modo: modo ?? "normal",
     }),
   });
   if (!res.ok) throw new ApiError(await parseErrorDetail(res), res.status);

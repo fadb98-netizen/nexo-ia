@@ -59,6 +59,7 @@ export function AssistantResponse({
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone={TONO_EVIDENCIA[respuesta.nivel_evidencia] ?? "neutral"}>Evidencia {respuesta.nivel_evidencia}</Badge>
         <Badge tone={respuesta.origen === "ia" ? "accent" : "neutral"}>{respuesta.origen === "ia" ? "Investigado por IA" : "Determinístico (Python)"}</Badge>
+        {respuesta.modo === "profundo" && <Badge tone="accent">Análisis profundo</Badge>}
         {respuesta.hay_causa_dominante ? (
           <Badge tone="positive">Causa dominante</Badge>
         ) : (

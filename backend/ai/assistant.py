@@ -25,6 +25,19 @@ MAX_RONDAS_HERRAMIENTAS = 6
 MAX_REINTENTOS_VALIDACION = 2
 MAX_TURNOS_HISTORIAL = 4  # cuántos intercambios previos se le pasan a la IA como memoria real
 
+# --- Modo "Análisis profundo" ---
+# No es "el mismo prompt pero más largo": Python hace la exploración
+# exhaustiva de antemano (ver core/combinations.explorar_cruces_profundo) y
+# se la entrega al modelo ya calculada, para que el trabajo del modelo sea
+# sintetizar sobre evidencia rica en vez de descubrirla por prueba y error
+# ronda a ronda (que es, en la práctica, donde aparecían los errores de
+# scope y de nivel de agregación de las fases anteriores). El scope activo
+# nunca se expande en este modo — sólo aumenta la profundidad dentro de él.
+MODEL_PROFUNDO = os.environ.get("OPENAI_MODEL_PROFUNDO", MODEL)  # mismo modelo salvo que se configure uno más fuerte
+MAX_RONDAS_HERRAMIENTAS_PROFUNDO = 10
+NIVEL_MAX_PROFUNDO = 4  # hasta 4 de las 5 dimensiones combinadas
+TOP_N_CRUCES_PROFUNDO = 40  # tope de cruces que se le mandan de entrada, nunca en silencio (se loguea si trunca)
+
 # Campos numéricos de un cruce que el ranking (y metricas_respaldo, cuando la
 # respuesta cita un cruce puntual) puede citar. Es una lista cerrada a
 # propósito: así el validador puede leer cruce_citado[campo] directamente y
@@ -253,9 +266,11 @@ def responder(
     anotaciones: list[str] | None = None,
     historial: list[dict] | None = None,
     aclaracion_elegida: dict | None = None,
+    modo: str = "normal",
 ) -> dict:
     anotaciones = anotaciones or []
     historial = historial or []
+    profundo = modo == "profundo"
     client = _cliente()
     contador = _ClienteContado(client) if client is not None else None
     scope_anterior = _scope_anterior_de(historial)
@@ -270,7 +285,9 @@ def responder(
                 "responder: pregunta ambigua (%s) opciones=%s llamadas_openai=%d",
                 ambigua["motivo"], ambigua["opciones"], contador.llamadas if contador else 0,
             )
-            return _respuesta_aclaracion(ambigua["motivo"], ambigua["opciones"])
+            respuesta_ambigua = _respuesta_aclaracion(ambigua["motivo"], ambigua["opciones"])
+            respuesta_ambigua["modo"] = modo
+            return respuesta_ambigua
 
     if client is None:
         scope_propuesto = scope.resolver_scope_determinista(pregunta, ctx.cruces, scope_anterior)
@@ -283,7 +300,7 @@ def responder(
                 ),
             }
         cruces_scope = scope.filtrar_cruces_por_scope(ctx.cruces, scope_final)
-        return _respuesta_determinista(
+        respuesta_sin_ia = _respuesta_determinista(
             pregunta,
             hallazgos,
             "No hay una clave de OpenAI configurada: se muestra el mejor hallazgo calculado por Python.",
@@ -291,6 +308,8 @@ def responder(
             cruces_scope=cruces_scope,
             semanas_grafico=ctx.semanas_grafico,
         )
+        respuesta_sin_ia["modo"] = modo
+        return respuesta_sin_ia
 
     # El scope se resuelve UNA vez, antes de tocar ninguna herramienta, y se
     # usa para filtrar los cruces que el resto del turno (tools + validador +
@@ -311,16 +330,36 @@ def responder(
     ctx_scope = dataclasses.replace(ctx, cruces=cruces_scope, scope_activo=scope_final)
 
     logger.info(
-        "responder: scope_anterior=%s scope_propuesto=%s scope_final=%s cruces_visibles=%d/%d",
-        scope_anterior, scope_propuesto, scope_final, len(cruces_scope), len(ctx.cruces),
+        "responder: scope_anterior=%s scope_propuesto=%s scope_final=%s cruces_visibles=%d/%d modo=%s",
+        scope_anterior, scope_propuesto, scope_final, len(cruces_scope), len(ctx.cruces), modo,
     )
+
+    exploracion_profunda = None
+    if profundo:
+        seleccionados, total_material = combinations.explorar_cruces_profundo(
+            cruces_scope, nivel_max=NIVEL_MAX_PROFUNDO, top_n=TOP_N_CRUCES_PROFUNDO
+        )
+        exploracion_profunda = [tools.cruce_publico(c) for c in seleccionados]
+        if total_material > len(seleccionados):
+            logger.info(
+                "responder: modo profundo truncó la exploración a %d de %d cruces materiales",
+                len(seleccionados), total_material,
+            )
+
+    modelo_turno = MODEL_PROFUNDO if profundo else MODEL
+    max_rondas = MAX_RONDAS_HERRAMIENTAS_PROFUNDO if profundo else MAX_RONDAS_HERRAMIENTAS
 
     mensajes = [{"role": "system", "content": prompts.SYSTEM_ASISTENTE}]
     for turno in historial[-MAX_TURNOS_HISTORIAL:]:
         mensajes.append({"role": "user", "content": turno["pregunta"]})
         mensajes.append({"role": "assistant", "content": turno["respuesta_resumen"]})
     mensajes.append(
-        {"role": "user", "content": prompts.prompt_pregunta(pregunta, contexto_seleccionado, anotaciones, scope_final)}
+        {
+            "role": "user",
+            "content": prompts.prompt_pregunta(
+                pregunta, contexto_seleccionado, anotaciones, scope_final, exploracion_profunda
+            ),
+        }
     )
 
     logger.info(
@@ -329,13 +368,15 @@ def responder(
     )
 
     def _fallback(nota: str) -> dict:
-        return _respuesta_determinista(
+        resp = _respuesta_determinista(
             pregunta, hallazgos, nota, scope_activo=scope_final, cruces_scope=cruces_scope, semanas_grafico=ctx.semanas_grafico
         )
+        resp["modo"] = modo
+        return resp
 
     try:
-        _correr_rondas_de_herramientas(contador, mensajes, ctx_scope)
-        respuesta = _forzar_respuesta_estructurada(contador, mensajes)
+        _correr_rondas_de_herramientas(contador, mensajes, ctx_scope, model=modelo_turno, max_rondas=max_rondas)
+        respuesta = _forzar_respuesta_estructurada(contador, mensajes, model=modelo_turno)
 
         valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
         intentos = 0
@@ -343,12 +384,15 @@ def responder(
             logger.info("responder: validacion fallida (intento %d): %s", intentos, "; ".join(problemas))
             mensajes.append({"role": "assistant", "content": json.dumps(respuesta, ensure_ascii=False)})
             mensajes.append({"role": "user", "content": correcciones.construir_mensaje_correccion(problemas)})
-            _correr_rondas_de_herramientas(contador, mensajes, ctx_scope)
-            respuesta = _forzar_respuesta_estructurada(contador, mensajes)
+            _correr_rondas_de_herramientas(contador, mensajes, ctx_scope, model=modelo_turno, max_rondas=max_rondas)
+            respuesta = _forzar_respuesta_estructurada(contador, mensajes, model=modelo_turno)
             valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
             intentos += 1
 
-        logger.info("responder: llamadas_openai=%d intentos_validacion=%d", contador.llamadas, intentos)
+        logger.info(
+            "responder: llamadas_openai=%d intentos_validacion=%d modo=%s modelo=%s",
+            contador.llamadas, intentos, modo, modelo_turno,
+        )
 
         if not valido:
             logger.info("responder: fallback determinista tras %d reintentos. problemas=%s", intentos, "; ".join(problemas))
@@ -359,6 +403,7 @@ def responder(
             )
 
         respuesta["origen"] = "ia"
+        respuesta["modo"] = modo
         graficos_solicitados = respuesta.get("graficos", [])
         respuesta["graficos"] = _resolver_graficos(graficos_solicitados, ctx, respuesta.get("segmento") or [])
         logger.info(
@@ -381,9 +426,15 @@ def _contar_registros(resultado: dict) -> int:
     return 1 if resultado.get("encontrado") else 0
 
 
-def _correr_rondas_de_herramientas(client, mensajes: list[dict], ctx: tools.ContextoHerramientas) -> None:
-    for ronda in range(MAX_RONDAS_HERRAMIENTAS):
-        resp = client.chat.completions.create(model=MODEL, messages=mensajes, tools=tools.TOOLS_SCHEMA, tool_choice="auto")
+def _correr_rondas_de_herramientas(
+    client,
+    mensajes: list[dict],
+    ctx: tools.ContextoHerramientas,
+    model: str = MODEL,
+    max_rondas: int = MAX_RONDAS_HERRAMIENTAS,
+) -> None:
+    for ronda in range(max_rondas):
+        resp = client.chat.completions.create(model=model, messages=mensajes, tools=tools.TOOLS_SCHEMA, tool_choice="auto")
         msg = resp.choices[0].message
         if not msg.tool_calls:
             return
@@ -413,14 +464,14 @@ def _correr_rondas_de_herramientas(client, mensajes: list[dict], ctx: tools.Cont
             )
 
 
-def _forzar_respuesta_estructurada(client, mensajes: list[dict]) -> dict:
+def _forzar_respuesta_estructurada(client, mensajes: list[dict], model: str = MODEL) -> dict:
     mensajes_finales = mensajes + [
         {
             "role": "user",
             "content": "Devolvé ahora tu conclusión final en el formato JSON estructurado pedido, sin llamar más herramientas.",
         }
     ]
-    resp = client.chat.completions.create(model=MODEL, messages=mensajes_finales, response_format=RESPUESTA_JSON_SCHEMA)
+    resp = client.chat.completions.create(model=model, messages=mensajes_finales, response_format=RESPUESTA_JSON_SCHEMA)
     return json.loads(resp.choices[0].message.content)
 
 

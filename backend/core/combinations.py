@@ -126,6 +126,30 @@ def filtrar_material(cruces: list[dict]) -> list[dict]:
     return resultado
 
 
+def explorar_cruces_profundo(
+    cruces_scope: list[dict], nivel_min: int = 2, nivel_max: int = 4, top_n: int = 40
+) -> tuple[list[dict], int]:
+    """Exploración exhaustiva para el modo "Análisis profundo": TODOS los
+    cruces materiales entre `nivel_min` y `nivel_max` dimensiones dentro del
+    scope ya resuelto (`cruces_scope` — puede ser el total de las 31
+    combinaciones si no hay scope activo), ordenados por |contribución|.
+
+    A diferencia de `patterns.generar_hallazgos` (3-5 relatos curados, sin
+    duplicar sub-conjuntos), esto le da al modelo una base amplia para
+    sintetizar él mismo: el objetivo de "profundo" es entregarle de entrada
+    muchos más cruces ya calculados, no una narrativa ya armada ni forzarlo a
+    descubrirlos por prueba y error llamando herramientas de a una dimensión.
+
+    Devuelve `(seleccionados, total_material)` — si `total_material` es
+    mayor a `len(seleccionados)`, el caller puede avisar que se truncó (nunca
+    en silencio).
+    """
+    candidatos = [c for c in cruces_scope if nivel_min <= c["nivel"] <= nivel_max]
+    materiales = filtrar_material(candidatos)
+    materiales.sort(key=lambda c: abs(c["contribucion_pct"]), reverse=True)
+    return materiales[:top_n], len(materiales)
+
+
 def _agregar(df: pl.DataFrame, combo: tuple[str, ...], sufijo: str = "") -> pl.DataFrame:
     if df.height == 0:
         return pl.DataFrame(schema={**{d: pl.Utf8 for d in combo}, **{f"{c}{sufijo}": pl.Float64 for c in _COLS_NUMERICAS_ACTUAL}})

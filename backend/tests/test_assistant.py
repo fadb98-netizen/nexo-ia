@@ -124,6 +124,81 @@ def test_respuesta_determinista_con_scope_sintetiza_hallazgo_si_ninguno_global_m
     assert "ROSARIO" not in resp["que_ocurrio"]
 
 
+def test_responder_modo_profundo_usa_modelo_y_rondas_profundas(monkeypatch):
+    """El modo "Análisis profundo" tiene que usar MODEL_PROFUNDO y
+    MAX_RONDAS_HERRAMIENTAS_PROFUNDO -- se verifica interceptando las dos
+    funciones que hacen las llamadas reales a OpenAI, sin necesidad de
+    simular un cliente completo."""
+    capturado = {}
+
+    def _rondas_falsas(client, mensajes, ctx, model=assistant.MODEL, max_rondas=assistant.MAX_RONDAS_HERRAMIENTAS):
+        capturado["model"] = model
+        capturado["max_rondas"] = max_rondas
+
+    def _estructurada_falsa(client, mensajes, model=assistant.MODEL):
+        capturado.setdefault("model_final", model)
+        return {
+            "que_ocurrio": "El negocio se mantuvo estable en el período.",
+            "segmento": [],
+            "cuanto_explica": "0.0%",
+            "metricas_respaldo": [],
+            "evolucion_semanal": "Serie semanal sin variaciones relevantes en el período.",
+            "nivel_evidencia": "media",
+            "limitaciones": "",
+            "hay_causa_dominante": False,
+            "graficos": [],
+            "ranking": [],
+        }
+
+    monkeypatch.setattr(assistant, "_cliente", lambda: object())
+    monkeypatch.setattr(assistant, "_correr_rondas_de_herramientas", _rondas_falsas)
+    monkeypatch.setattr(assistant, "_forzar_respuesta_estructurada", _estructurada_falsa)
+    monkeypatch.setattr(ai_scope, "detectar_ambiguedad", lambda *a, **k: {"es_ambigua": False, "motivo": "", "opciones": []})
+    monkeypatch.setattr(ai_scope, "resolver_scope", lambda *a, **k: {})
+
+    ctx = tools.ContextoHerramientas(
+        cruces=[], df_reciente=_df([]), df_comparativo=_df([]), semanas_grafico=[], semanas_historico=[]
+    )
+
+    resp = assistant.responder("Hacé un análisis profundo del negocio", ctx, hallazgos=[], modo="profundo")
+
+    assert capturado["model"] == assistant.MODEL_PROFUNDO
+    assert capturado["max_rondas"] == assistant.MAX_RONDAS_HERRAMIENTAS_PROFUNDO
+    assert resp["modo"] == "profundo"
+
+
+def test_responder_modo_normal_usa_modelo_y_rondas_normales(monkeypatch):
+    capturado = {}
+
+    def _rondas_falsas(client, mensajes, ctx, model=assistant.MODEL, max_rondas=assistant.MAX_RONDAS_HERRAMIENTAS):
+        capturado["model"] = model
+        capturado["max_rondas"] = max_rondas
+
+    def _estructurada_falsa(client, mensajes, model=assistant.MODEL):
+        return {
+            "que_ocurrio": "x", "segmento": [], "cuanto_explica": "0.0%", "metricas_respaldo": [],
+            "evolucion_semanal": "Serie semanal sin variaciones relevantes en el período.",
+            "nivel_evidencia": "media", "limitaciones": "", "hay_causa_dominante": False,
+            "graficos": [], "ranking": [],
+        }
+
+    monkeypatch.setattr(assistant, "_cliente", lambda: object())
+    monkeypatch.setattr(assistant, "_correr_rondas_de_herramientas", _rondas_falsas)
+    monkeypatch.setattr(assistant, "_forzar_respuesta_estructurada", _estructurada_falsa)
+    monkeypatch.setattr(ai_scope, "detectar_ambiguedad", lambda *a, **k: {"es_ambigua": False, "motivo": "", "opciones": []})
+    monkeypatch.setattr(ai_scope, "resolver_scope", lambda *a, **k: {})
+
+    ctx = tools.ContextoHerramientas(
+        cruces=[], df_reciente=_df([]), df_comparativo=_df([]), semanas_grafico=[], semanas_historico=[]
+    )
+
+    resp = assistant.responder("¿Cómo viene el negocio?", ctx, hallazgos=[])
+
+    assert capturado["model"] == assistant.MODEL
+    assert capturado["max_rondas"] == assistant.MAX_RONDAS_HERRAMIENTAS
+    assert resp["modo"] == "normal"
+
+
 def test_responder_pregunta_ambigua_corta_antes_de_investigar(monkeypatch):
     """Si `detectar_ambiguedad` marca la pregunta como ambigua, responder()
     devuelve la aclaración directo -- nunca llega a resolver scope ni a

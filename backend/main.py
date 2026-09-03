@@ -50,6 +50,7 @@ class ChatRequest(BaseModel):
     contexto_seleccionado: dict | None = None
     historial: list[HistorialItem] = []
     aclaracion_elegida: dict | None = None  # {"dimension", "valor"} si el usuario ya eligió una opción de una aclaración previa
+    modo: str = "normal"  # "normal" o "profundo" (ver ai/assistant.py)
 
 
 class ChartRequestBody(BaseModel):
@@ -245,7 +246,14 @@ def chat(body: ChatRequest) -> dict:
         for h in body.historial
     ]
     respuesta = assistant.responder(
-        body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones, historial, body.aclaracion_elegida
+        body.pregunta,
+        ctx,
+        run.hallazgos,
+        body.contexto_seleccionado,
+        run.anotaciones,
+        historial,
+        body.aclaracion_elegida,
+        body.modo,
     )
     supabase_client.guardar_conversacion(body.run_id, body.pregunta, respuesta)
     return respuesta

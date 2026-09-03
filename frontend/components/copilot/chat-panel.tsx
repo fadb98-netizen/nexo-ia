@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { UserBubble, AssistantResponse } from "./chat-message";
 import { preguntar } from "@/lib/api";
-import type { ChatResponse, ContextoSeleccionado, HistorialItem, OpcionAclaracion } from "@/types";
+import type { ChatResponse, ContextoSeleccionado, HistorialItem, ModoAnalisis, OpcionAclaracion } from "@/types";
 
 const TURNOS_HISTORIAL_ENVIADOS = 4;
 
@@ -26,6 +26,7 @@ interface Mensaje {
   respuesta?: ChatResponse;
   cargando?: boolean;
   preguntaOriginal?: string; // sólo en mensajes de asistente: la pregunta que la generó (para reenviar si pide una aclaración)
+  modoEnCurso?: ModoAnalisis; // sólo mientras `cargando`: para mostrar un texto distinto en modo profundo
 }
 
 export function ChatPanel({
@@ -41,6 +42,7 @@ export function ChatPanel({
 }) {
   const [mensajes, setMensajes] = React.useState<Mensaje[]>([]);
   const [input, setInput] = React.useState("");
+  const [modoProfundo, setModoProfundo] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const ultimoNonce = React.useRef<number>(-1);
 
@@ -49,6 +51,7 @@ export function ChatPanel({
       if (!texto.trim()) return;
       const idUsuario = `u-${Date.now()}`;
       const idAsistente = `a-${Date.now()}`;
+      const modo: ModoAnalisis = modoProfundo ? "profundo" : "normal";
 
       const historial: HistorialItem[] = [];
       for (let i = 0; i < mensajes.length - 1; i++) {
@@ -80,7 +83,7 @@ export function ChatPanel({
       setMensajes((prev) => [
         ...prev,
         { id: idUsuario, rol: "usuario", texto: aclaracion ? aclaracion.etiqueta : texto },
-        { id: idAsistente, rol: "asistente", cargando: true, preguntaOriginal: texto },
+        { id: idAsistente, rol: "asistente", cargando: true, preguntaOriginal: texto, modoEnCurso: modo },
       ]);
       setInput("");
       try {
@@ -89,7 +92,8 @@ export function ChatPanel({
           texto,
           contextoDeEstaPregunta,
           historialReciente,
-          aclaracion ? { dimension: aclaracion.dimension, valor: aclaracion.valor } : undefined
+          aclaracion ? { dimension: aclaracion.dimension, valor: aclaracion.valor } : undefined,
+          modo
         );
         setMensajes((prev) => prev.map((m) => (m.id === idAsistente ? { ...m, cargando: false, respuesta } : m)));
       } catch (err) {
@@ -118,7 +122,7 @@ export function ChatPanel({
         );
       }
     },
-    [runId, contexto, mensajes, onLimpiarContexto]
+    [runId, contexto, mensajes, onLimpiarContexto, modoProfundo]
   );
 
   const elegirOpcion = React.useCallback(
@@ -172,7 +176,8 @@ export function ChatPanel({
             <UserBubble key={m.id} texto={m.texto ?? ""} />
           ) : m.cargando ? (
             <div key={m.id} className="mr-2 flex items-center gap-2 rounded-lg rounded-tl-sm border border-border bg-bg-subtle px-3 py-2.5 text-xs text-fg-subtle">
-              <Spinner /> Investigando con evidencia…
+              <Spinner />
+              {m.modoEnCurso === "profundo" ? "Haciendo un análisis profundo (puede tardar más)…" : "Investigando con evidencia…"}
             </div>
           ) : m.respuesta ? (
             <AssistantResponse
@@ -184,23 +189,35 @@ export function ChatPanel({
         )}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-border-subtle p-2.5">
-        <Textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              enviar(input);
-            }
-          }}
-          placeholder="Preguntale al copiloto..."
-          rows={1}
-          className="min-h-[32px]"
-        />
-        <Button size="sm" onClick={() => enviar(input)} disabled={!input.trim()}>
-          Enviar
-        </Button>
+      <div className="border-t border-border-subtle p-2.5">
+        <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-fg-subtle">
+          <input
+            type="checkbox"
+            checked={modoProfundo}
+            onChange={(e) => setModoProfundo(e.target.checked)}
+            className="h-3 w-3 accent-accent"
+          />
+          Análisis profundo
+          <span className="text-fg-subtle/70">— usa más recursos y tarda más, para una pregunta puntual</span>
+        </label>
+        <div className="flex items-end gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                enviar(input);
+              }
+            }}
+            placeholder="Preguntale al copiloto..."
+            rows={1}
+            className="min-h-[32px]"
+          />
+          <Button size="sm" onClick={() => enviar(input)} disabled={!input.trim()}>
+            Enviar
+          </Button>
+        </div>
       </div>
     </div>
   );
