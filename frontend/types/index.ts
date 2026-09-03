@@ -159,7 +159,7 @@ export interface ChatResponse {
   que_ocurrio: string;
   segmento: SegmentoDim[];
   cuanto_explica: string;
-  metricas_respaldo: { nombre: string; valor: string }[];
+  metricas_respaldo: { nombre: string; campo?: string; valor: string }[];
   evolucion_semanal: string;
   nivel_evidencia: NivelEvidencia;
   limitaciones: string;

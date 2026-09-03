@@ -23,15 +23,41 @@ MAX_RONDAS_HERRAMIENTAS = 6
 MAX_REINTENTOS_VALIDACION = 2
 MAX_TURNOS_HISTORIAL = 4  # cuántos intercambios previos se le pasan a la IA como memoria real
 
-# Campos numéricos de un cruce que el ranking puede citar. Es una lista
-# cerrada a propósito: así el validador puede leer cruce_citado[metrica]
-# directamente y comparar contra el valor citado, sin parsers de texto libre.
+# Campos numéricos de un cruce que el ranking (y metricas_respaldo, cuando la
+# respuesta cita un cruce puntual) puede citar. Es una lista cerrada a
+# propósito: así el validador puede leer cruce_citado[campo] directamente y
+# comparar contra el valor citado, sin parsers de texto libre — y, al ser un
+# `enum` del schema, el modelo no puede inventar un nombre de métrica que no
+# exista en los datos (p. ej. "margen bruto").
 CAMPOS_RANKING_VALIDOS = [
     "usd_actual", "usd_anterior", "diferencia_absoluta", "variacion_pct",
     "pedidos_actual", "pedidos_anterior", "clientes_actual", "clientes_anterior",
-    "ticket_actual", "ticket_anterior", "participacion_pct", "contribucion_pct",
-    "posiciones_por_pedido_actual", "posiciones_por_pedido_anterior",
+    "ticket_actual", "ticket_anterior", "participacion_pct", "participacion_anterior_pct",
+    "contribucion_pct", "posiciones_por_pedido_actual", "posiciones_por_pedido_anterior",
+    "persistencia", "volatilidad", "n_semanas_observadas",
 ]
+
+# Campos que existen en `resumen_total` (comparación agregada de TODO el
+# negocio, aplanada por _aplanar_resumen_total) — se usan como nombres válidos
+# de `metricas_respaldo` cuando la respuesta describe el TOTAL (`segmento`
+# vacío) en vez de un cruce puntual. Los nombres de "diferencia" y "variación"
+# llevan el prefijo de la métrica acá (p. ej. `pedidos_variacion_pct`) porque
+# el total compara 4 métricas distintas, a diferencia de un cruce (que sólo
+# trae la diferencia/variación de usd).
+CAMPOS_TOTAL_VALIDOS = [
+    "usd_actual", "usd_anterior", "usd_diferencia_absoluta", "usd_variacion_pct",
+    "pedidos_actual", "pedidos_anterior", "pedidos_diferencia_absoluta", "pedidos_variacion_pct",
+    "clientes_actual", "clientes_anterior", "clientes_diferencia_absoluta", "clientes_variacion_pct",
+    "posiciones_por_pedido_actual", "posiciones_por_pedido_anterior",
+    "posiciones_por_pedido_diferencia_absoluta", "posiciones_por_pedido_variacion_pct",
+]
+
+# Universo completo de nombres de campo que `metricas_respaldo` puede citar
+# (cruce puntual O total, según tenga o no `segmento`). Es un `enum` del
+# schema: el modelo elige `campo` de esta lista cerrada, así el validador
+# siempre puede contrastarlo contra un valor real — nunca queda un nombre
+# libre sin ninguna forma de verificarlo.
+CAMPOS_METRICA_RESPALDO_VALIDOS = sorted(set(CAMPOS_RANKING_VALIDOS) | set(CAMPOS_TOTAL_VALIDOS))
 
 RESPUESTA_JSON_SCHEMA = {
     "type": "json_schema",
@@ -70,11 +96,22 @@ RESPUESTA_JSON_SCHEMA = {
                 "cuanto_explica": {"type": "string"},
                 "metricas_respaldo": {
                     "type": "array",
+                    "description": (
+                        "Evidencia numérica de respaldo. `campo` es el nombre TÉCNICO exacto "
+                        "del dato tal como lo devolvió la herramienta (de una lista cerrada: no "
+                        "podés inventar un campo que no exista, como 'margen' o 'rentabilidad' "
+                        "— esos datos no existen en el dataset). `nombre` es sólo la etiqueta en "
+                        "lenguaje humano que se muestra al usuario (ej. 'USD actual')."
+                    ),
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["nombre", "valor"],
-                        "properties": {"nombre": {"type": "string"}, "valor": {"type": "string"}},
+                        "required": ["nombre", "campo", "valor"],
+                        "properties": {
+                            "nombre": {"type": "string"},
+                            "campo": {"type": "string", "enum": CAMPOS_METRICA_RESPALDO_VALIDOS},
+                            "valor": {"type": "string"},
+                        },
                     },
                 },
                 "evolucion_semanal": {"type": "string"},
@@ -388,7 +425,7 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
         "segmento": [{"dimension": d, "valor": str(elegido["segmento"][d])} for d in elegido["dimensiones"]],
         "cuanto_explica": elegido["cuanto_explica"],
         "metricas_respaldo": [
-            {"nombre": k, "valor": str(v)} for k, v in list(elegido["metricas_respaldo"].items())[:8]
+            {"nombre": k, "campo": k, "valor": str(v)} for k, v in list(elegido["metricas_respaldo"].items())[:8]
         ],
         "evolucion_semanal": f"Serie semanal (usd), {elegido['semanas_grafico'][0]} a {elegido['semanas_grafico'][-1]}: {serie_str}",
         "nivel_evidencia": elegido["nivel_evidencia"],

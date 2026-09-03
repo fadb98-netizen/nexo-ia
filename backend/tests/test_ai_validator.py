@@ -37,8 +37,8 @@ def _respuesta_base(**overrides) -> dict:
         "segmento": [{"dimension": "sucursal", "valor": "CAPITAL"}, {"dimension": "familia", "valor": "CH304"}],
         "cuanto_explica": "Explica 45.0% de la variación total.",
         "metricas_respaldo": [
-            {"nombre": "usd_actual", "valor": "115756.29"},
-            {"nombre": "pedidos_actual", "valor": "20"},
+            {"nombre": "usd_actual", "campo": "usd_actual", "valor": "115756.29"},
+            {"nombre": "pedidos_actual", "campo": "pedidos_actual", "valor": "20"},
         ],
         "evolucion_semanal": "Cayó de forma sostenida en las últimas 4 semanas, semana a semana.",
         "nivel_evidencia": "media",
@@ -84,8 +84,8 @@ def test_segmento_vacio_es_valido_para_pregunta_sobre_el_total():
     resp = _respuesta_base(
         segmento=[],
         metricas_respaldo=[
-            {"nombre": "usd_actual", "valor": "2176220"},
-            {"nombre": "usd_anterior", "valor": "2477074"},
+            {"nombre": "usd_actual", "campo": "usd_actual", "valor": "2176220"},
+            {"nombre": "usd_anterior", "campo": "usd_anterior", "valor": "2477074"},
         ],
     )
     valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES, RESUMEN_TOTAL)
@@ -96,8 +96,8 @@ def test_segmento_vacio_con_metrica_que_no_coincide_con_el_total_falla():
     resp = _respuesta_base(
         segmento=[],
         metricas_respaldo=[
-            {"nombre": "usd_actual", "valor": "999999999"},
-            {"nombre": "usd_anterior", "valor": "2477074"},
+            {"nombre": "usd_actual", "campo": "usd_actual", "valor": "999999999"},
+            {"nombre": "usd_anterior", "campo": "usd_anterior", "valor": "2477074"},
         ],
     )
     valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES, RESUMEN_TOTAL)
@@ -113,7 +113,7 @@ def test_segmento_inventado_falla():
 
 
 def test_pocas_metricas_falla():
-    resp = _respuesta_base(metricas_respaldo=[{"nombre": "usd_actual", "valor": "115756.29"}])
+    resp = _respuesta_base(metricas_respaldo=[{"nombre": "usd_actual", "campo": "usd_actual", "valor": "115756.29"}])
     valido, problemas = validator.validar_respuesta(resp, CRUCES_DISPONIBLES)
     assert not valido
 
@@ -127,8 +127,8 @@ def test_cuanto_explica_sin_numero_falla():
 def test_cifra_citada_no_coincide_con_la_real_falla():
     resp = _respuesta_base(
         metricas_respaldo=[
-            {"nombre": "usd_actual", "valor": "999999.00"},
-            {"nombre": "pedidos_actual", "valor": "20"},
+            {"nombre": "usd_actual", "campo": "usd_actual", "valor": "999999.00"},
+            {"nombre": "pedidos_actual", "campo": "pedidos_actual", "valor": "20"},
         ]
     )
     valido, problemas = validator.validar_respuesta(resp, [CRUCE_REAL])
@@ -136,16 +136,41 @@ def test_cifra_citada_no_coincide_con_la_real_falla():
     assert any("no coincide" in p for p in problemas)
 
 
+def test_metrica_con_campo_inexistente_falla():
+    """Si el 'campo' citado no corresponde a ningún dato real del cruce (por
+    ejemplo una métrica que Nexo IA no calcula, como margen o rentabilidad),
+    el validador tiene que rechazarlo explícitamente — no ignorarlo en
+    silencio sólo porque el nombre no matchea ninguna clave conocida."""
+    resp = _respuesta_base(
+        metricas_respaldo=[
+            {"nombre": "Margen bruto", "campo": "margen_bruto", "valor": "115756.29"},
+            {"nombre": "pedidos_actual", "campo": "pedidos_actual", "valor": "20"},
+        ]
+    )
+    valido, problemas = validator.validar_respuesta(resp, [CRUCE_REAL])
+    assert not valido
+    assert any("no corresponde a ningún dato real" in p for p in problemas)
+
+
+def test_cuanto_explica_no_coincide_con_la_contribucion_real_falla():
+    """'cuanto_explica' tiene que reflejar la contribución/participación real
+    del cruce citado — no cualquier número con forma de porcentaje."""
+    resp = _respuesta_base(cuanto_explica="Explica el 95.0% de la variación total.")
+    valido, problemas = validator.validar_respuesta(resp, [CRUCE_REAL])
+    assert not valido
+    assert any("cuanto_explica" in p for p in problemas)
+
+
 def test_cifra_citada_en_formato_es_ar_se_reconoce_igual():
     """115.756,29 (es-AR) y 115756.29 (estándar) tienen que validar igual:
     regresión del bug donde el parser rompía cifras en notación estándar."""
     resp_estandar = _respuesta_base(metricas_respaldo=[
-        {"nombre": "usd_actual", "valor": "115756.29"},
-        {"nombre": "pedidos_actual", "valor": "20"},
+        {"nombre": "usd_actual", "campo": "usd_actual", "valor": "115756.29"},
+        {"nombre": "pedidos_actual", "campo": "pedidos_actual", "valor": "20"},
     ])
     resp_es_ar = _respuesta_base(metricas_respaldo=[
-        {"nombre": "usd_actual", "valor": "115.756,29"},
-        {"nombre": "pedidos_actual", "valor": "20"},
+        {"nombre": "usd_actual", "campo": "usd_actual", "valor": "115.756,29"},
+        {"nombre": "pedidos_actual", "campo": "pedidos_actual", "valor": "20"},
     ])
     valido1, problemas1 = validator.validar_respuesta(resp_estandar, [CRUCE_REAL])
     valido2, problemas2 = validator.validar_respuesta(resp_es_ar, [CRUCE_REAL])

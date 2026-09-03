@@ -31,13 +31,31 @@ TOOLS_SCHEMA = [
             "name": "obtener_tabla_dimension",
             "description": (
                 "Ranking de una sola dimensión (nivel 1) ordenado por impacto. "
-                "Punto de partida para ver qué categorías mueven más el resultado."
+                "Punto de partida para ver qué categorías mueven más el resultado. "
+                "Si ya estás analizando un scope puntual (una sucursal, un sector, etc. "
+                "establecido antes en esta conversación), pasalo en `filtro` para que el "
+                "ranking quede restringido a ese scope — si llamás esta tool sin filtro "
+                "mientras ya hay un segmento establecido, el ranking que te devuelve es "
+                "GLOBAL (de todo el negocio) y vas a mezclar datos de otros segmentos con "
+                "los del que estás explicando."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "dimension": {"type": "string", "enum": DIMENSIONES},
                     "top_n": {"type": "integer", "minimum": 1, "maximum": 20, "default": 10},
+                    "filtro": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "dimension": {"type": "string", "enum": DIMENSIONES},
+                                "valor": {"type": "string"},
+                            },
+                            "required": ["dimension", "valor"],
+                        },
+                        "description": "Restringe el ranking a filas donde esas otras dimensiones ya conocidas tengan esos valores exactos.",
+                    },
                 },
                 "required": ["dimension"],
             },
@@ -52,7 +70,11 @@ TOOLS_SCHEMA = [
                 "combinación específica de dimensiones (1 a 5), opcionalmente restringida a "
                 "valores fijos de algunas de esas dimensiones. Usar esto para profundizar: "
                 "primero 1 dimensión, después 2, 3... hasta encontrar el cruce más profundo "
-                "que siga siendo material."
+                "que siga siendo material. El `filtro` puede incluir una dimensión que no "
+                "esté en `dimensiones` (por ejemplo, pedir el desglose por 'asesor' filtrado "
+                "por 'sucursal'): en ese caso la respuesta viene agrupada por la unión de "
+                "ambas (mirá el campo `nota` si aparece) — nunca uses esta tool sin filtro "
+                "para 'salir del paso' si el filtro con la dimensión correcta te devolvió 0 filas."
             ),
             "parameters": {
                 "type": "object",
@@ -184,17 +206,43 @@ def _cruce_publico(c: dict) -> dict:
     }
 
 
-def obtener_tabla_dimension(ctx: ContextoHerramientas, dimension: str, top_n: int = 10) -> dict:
-    candidatos = [c for c in ctx.cruces if c["nivel"] == 1 and c["dimensiones"] == [dimension]]
+def obtener_tabla_dimension(
+    ctx: ContextoHerramientas, dimension: str, top_n: int = 10, filtro: list[dict] | None = None
+) -> dict:
+    filtro_dict = _filtro_a_dict(filtro)
+    # Igual que en desglosar_variacion: si el filtro trae otra dimensión (p.
+    # ej. pedís "asesor" filtrado por "sucursal"), hay que buscar entre los
+    # cruces de AMBAS dimensiones — un cruce de nivel 1 de "asesor" no tiene
+    # la clave "sucursal" en su segmento, así que filtrar ahí nunca matchea.
+    dims_busqueda = list(dict.fromkeys([dimension] + list(filtro_dict.keys())))
+
+    candidatos = [c for c in ctx.cruces if c["nivel"] == len(dims_busqueda) and set(c["dimensiones"]) == set(dims_busqueda)]
+    if filtro_dict:
+        candidatos = [c for c in candidatos if all(c["segmento"].get(k) == v for k, v in filtro_dict.items())]
     candidatos.sort(key=lambda c: abs(c["diferencia_absoluta"]), reverse=True)
-    return {"dimension": dimension, "filas": [_cruce_publico(c) for c in candidatos[:top_n]]}
+
+    resultado = {"dimension": dimension, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:top_n]]}
+    if filtro_dict and not candidatos:
+        resultado["nota"] = (
+            "No hay datos para esa dimensión con ese filtro. Si adivinaste el valor del "
+            "filtro, llamá esta misma tool sin filtro para esa otra dimensión primero y usá "
+            "un valor real de ahí — no reintentes con otro valor inventado, y no la vuelvas a "
+            "llamar sin filtro para 'salir del paso': eso te devolvería datos de todo el "
+            "negocio, no del segmento que estás analizando."
+        )
+    return resultado
 
 
 def desglosar_variacion(ctx: ContextoHerramientas, dimensiones: list[str], filtro: list[dict] | None = None) -> dict:
-    dims_set = list(dict.fromkeys(dimensiones))
+    dims_pedidas = list(dict.fromkeys(dimensiones))
     filtro_dict = _filtro_a_dict(filtro)
+    # Si el filtro trae una dimensión que no está en la lista pedida, hay que
+    # incluirla también en la búsqueda: un cruce de nivel 1 (p. ej. sólo
+    # "asesor") no tiene la clave "sucursal" en su segmento, así que un
+    # filtro por sucursal ahí nunca matchea nada aunque el dato exista.
+    dims_busqueda = list(dict.fromkeys(dims_pedidas + list(filtro_dict.keys())))
 
-    candidatos = [c for c in ctx.cruces if c["nivel"] == len(dims_set) and set(c["dimensiones"]) == set(dims_set)]
+    candidatos = [c for c in ctx.cruces if c["nivel"] == len(dims_busqueda) and set(c["dimensiones"]) == set(dims_busqueda)]
     if filtro_dict:
         candidatos = [
             c for c in candidatos
@@ -204,17 +252,27 @@ def desglosar_variacion(ctx: ContextoHerramientas, dimensiones: list[str], filtr
 
     if not candidatos:
         return {
-            "dimensiones": dims_set,
+            "dimensiones": dims_pedidas,
             "filtro": filtro_dict,
             "filas": [],
             "nota": (
                 "No hay datos para esa combinación de dimensiones/filtro. Si adivinaste el "
                 "valor del filtro, llamá obtener_tabla_dimension para esa dimensión primero y "
-                "usá un valor real de ahí — no reintentes con otro valor inventado."
+                "usá un valor real de ahí — no reintentes con otro valor inventado, y no llames "
+                "una tool sin filtro para 'salir del paso': eso mezclaría datos de otros "
+                "segmentos con los del que estás analizando."
             ),
         }
 
-    return {"dimensiones": dims_set, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:15]]}
+    resultado = {"dimensiones": dims_pedidas, "filtro": filtro_dict, "filas": [_cruce_publico(c) for c in candidatos[:15]]}
+    if dims_busqueda != dims_pedidas:
+        extra = [d for d in filtro_dict if d not in dims_pedidas]
+        resultado["nota"] = (
+            f"El filtro incluye {extra}, que no estaba en 'dimensiones': cada fila de 'filas' "
+            f"viene agrupada por {dims_busqueda} (las pedidas + las del filtro), no sólo por "
+            f"{dims_pedidas}."
+        )
+    return resultado
 
 
 def obtener_resumen_total(ctx: ContextoHerramientas) -> dict:
