@@ -57,6 +57,7 @@ export function ChatPanel({
           historial.push({
             pregunta: pregunta.texto,
             respuesta_resumen: `${respuesta.respuesta.que_ocurrio} ${respuesta.respuesta.cuanto_explica}`.trim(),
+            segmento: respuesta.respuesta.segmento,
           });
         }
       }

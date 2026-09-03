@@ -41,6 +41,7 @@ SAMPLE_CSV_PATH = Path(__file__).parent.parent / "sample-data" / "pedidos_demo.c
 class HistorialItem(BaseModel):
     pregunta: str
     respuesta_resumen: str
+    segmento: list[dict] | None = None  # segmento estructurado de esa respuesta (para resolver el scope del turno siguiente)
 
 
 class ChatRequest(BaseModel):
@@ -235,7 +236,10 @@ def chat(body: ChatRequest) -> dict:
         resumen_total=run.resumen_periodo,
     )
     logger.info("chat: run_id=%s pregunta=%r historial=%d contexto=%s", body.run_id, body.pregunta, len(body.historial), bool(body.contexto_seleccionado))
-    historial = [{"pregunta": h.pregunta, "respuesta_resumen": h.respuesta_resumen} for h in body.historial]
+    historial = [
+        {"pregunta": h.pregunta, "respuesta_resumen": h.respuesta_resumen, "segmento": h.segmento or []}
+        for h in body.historial
+    ]
     respuesta = assistant.responder(body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones, historial)
     supabase_client.guardar_conversacion(body.run_id, body.pregunta, respuesta)
     return respuesta

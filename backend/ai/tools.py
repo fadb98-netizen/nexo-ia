@@ -6,7 +6,7 @@ el dataset — no hay nombre de cliente en el schema).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import polars as pl
 
@@ -16,12 +16,15 @@ from core import metrics
 
 @dataclass
 class ContextoHerramientas:
-    cruces: list[dict]  # las 31 combinaciones completas, SIN filtrar por materialidad
+    cruces: list[dict]  # las combinaciones VISIBLES para esta pregunta puntual: ya
+    # filtradas por `ai/scope.py` al scope activo (todas, sin filtrar por materialidad,
+    # si no hay ningún scope establecido para esta pregunta)
     df_reciente: pl.DataFrame
     df_comparativo: pl.DataFrame
     semanas_grafico: list[str]
     semanas_historico: list[str]
     resumen_total: dict | None = None  # comparación actual vs. anterior agregada de TODO el dataset (sin filtrar)
+    scope_activo: dict = field(default_factory=dict)  # {dimension: valor} ya resuelto para esta pregunta
 
 
 TOOLS_SCHEMA = [
@@ -276,6 +279,15 @@ def desglosar_variacion(ctx: ContextoHerramientas, dimensiones: list[str], filtr
 
 
 def obtener_resumen_total(ctx: ContextoHerramientas) -> dict:
+    if ctx.scope_activo:
+        return {
+            "error": (
+                f"Hay un scope activo para esta pregunta ({ctx.scope_activo}): este total "
+                "SIN FILTRAR de todo el negocio no corresponde a ese scope. Para el total de "
+                "ESE scope, usá desglosar_variacion con las dimensiones del scope en el "
+                "filtro (o directamente citá el cruce que ya te devolvió otra herramienta)."
+            )
+        }
     if not ctx.resumen_total:
         return {"error": "No hay resumen total disponible para esta corrida."}
     return ctx.resumen_total

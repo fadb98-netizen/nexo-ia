@@ -171,6 +171,7 @@ export interface ChatResponse {
 export interface HistorialItem {
   pregunta: string;
   respuesta_resumen: string;
+  segmento?: SegmentoDim[];
 }
 
 export interface ContextoSeleccionado {

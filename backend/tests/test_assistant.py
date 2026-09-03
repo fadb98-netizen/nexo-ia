@@ -6,6 +6,7 @@ import polars as pl
 
 from ai import assistant, tools
 from config import COL_FAMILIA, COL_SEMANA, COL_SUCURSAL, COL_USD, COL_KG, COL_PEDIDO_ID, COL_POSICIONES, COL_CLIENTE_ID
+from tests.conftest import SEMANA_COMPARATIVA, SEMANA_RECIENTE
 
 
 def _df(filas: list[dict]) -> pl.DataFrame:
@@ -57,6 +58,69 @@ def test_resolver_graficos_no_inyecta_filtro_de_la_dimension_agrupada():
 
     categorias = {c["categoria"] for c in resueltos[0]["datos"]["categorias"]}
     assert "MENDOZA" in categorias  # familia sí se filtró a CH304, pero sucursal quedó libre para comparar
+
+
+def _hallazgo_falso(sucursal: str, tipo: str = "cambio_relevante") -> dict:
+    return {
+        "id": f"h-{sucursal}",
+        "tipo": tipo,
+        "segmento": {"sucursal": sucursal},
+        "dimensiones": ["sucursal"],
+        "que_ocurrio": f"En {sucursal} pasó algo.",
+        "cuanto_explica": "Explica 40.0% de la variación total.",
+        "metricas_respaldo": {"usd_actual": 100.0, "usd_anterior": 80.0},
+        "evolucion_semanal": [10.0, 20.0, 30.0, 40.0],
+        "semanas_grafico": ["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26"],
+        "nivel_evidencia": "media",
+        "limitaciones": [],
+    }
+
+
+def test_respuesta_determinista_con_scope_nunca_muestra_otro_segmento():
+    """El fallback determinístico (Fase 2) tiene que filtrar los hallazgos
+    globales por el scope activo -- nunca devolver el hallazgo #1 de OTRO
+    segmento sólo porque es el de mayor score a nivel de todo el negocio
+    (ese fue el bug más serio encontrado en la auditoría)."""
+    hallazgos_globales = [_hallazgo_falso("ROSARIO"), _hallazgo_falso("CAPITAL")]
+
+    resp = assistant._respuesta_determinista(
+        "¿cuál asesor explica más esa variación?",
+        hallazgos_globales,
+        "nota de prueba",
+        scope_activo={"sucursal": "CAPITAL"},
+    )
+
+    assert resp["segmento"] == [{"dimension": "sucursal", "valor": "CAPITAL"}]
+
+
+def test_respuesta_determinista_con_scope_sintetiza_hallazgo_si_ninguno_global_matchea(
+    df_reciente, df_comparativo, df_historico
+):
+    """Si ningún hallazgo PRIORIZADO (de todo el negocio) cae dentro del
+    scope, se sintetiza uno nuevo a partir de los cruces YA FILTRADOS a ese
+    scope -- nunca se muestra un hallazgo de otro segmento como si fuera la
+    respuesta."""
+    from ai import scope as ai_scope
+    from core import combinations
+
+    cruces = combinations.calcular_todas_las_combinaciones(
+        df_reciente, df_comparativo, df_historico, [SEMANA_COMPARATIVA, SEMANA_RECIENTE], []
+    )
+    cruces_capital = ai_scope.filtrar_cruces_por_scope(cruces, {"sucursal": "CAPITAL"})
+
+    hallazgos_globales = [_hallazgo_falso("ROSARIO")]  # ninguno menciona CAPITAL
+
+    resp = assistant._respuesta_determinista(
+        "¿qué pasó en CAPITAL?",
+        hallazgos_globales,
+        "nota de prueba",
+        scope_activo={"sucursal": "CAPITAL"},
+        cruces_scope=cruces_capital,
+        semanas_grafico=[SEMANA_COMPARATIVA.isoformat(), SEMANA_RECIENTE.isoformat()],
+    )
+
+    assert all(s["dimension"] != "sucursal" or s["valor"] == "CAPITAL" for s in resp["segmento"])
+    assert "ROSARIO" not in resp["que_ocurrio"]
 
 
 def test_resolver_graficos_sin_segmento_no_inyecta_nada():

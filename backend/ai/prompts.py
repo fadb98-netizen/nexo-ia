@@ -195,11 +195,28 @@ def prompt_analisis(resumen_periodo: dict, top_hallazgos: list[dict], anotacione
     return "\n\n".join(partes)
 
 
-def prompt_pregunta(pregunta: str, contexto_seleccionado: dict | None, anotaciones: list[str]) -> str:
+def prompt_pregunta(
+    pregunta: str,
+    contexto_seleccionado: dict | None,
+    anotaciones: list[str],
+    scope_activo: dict | None = None,
+) -> str:
     partes = [
         f"Pregunta ACTUAL del usuario, la que tenés que responder ahora (tiene prioridad "
         f"sobre cualquier mensaje anterior de la conversación): {pregunta}"
     ]
+    if scope_activo:
+        partes.append(
+            "SCOPE ACTIVO ya resuelto para esta pregunta: " + json.dumps(scope_activo, ensure_ascii=False) + ". "
+            "Python ya filtró TODAS las herramientas de cruces (obtener_tabla_dimension, "
+            "desglosar_variacion, consultar_tendencia_historica) a este universo — no hace "
+            "falta que vos repitas ese filtro para que funcione, aunque podés. "
+            "`obtener_resumen_total` queda BLOQUEADA mientras haya un scope activo (te va a "
+            "devolver un error si la llamás: no la necesitás, el total de este scope sale de "
+            "desglosar_variacion). Tu `segmento` final tiene que incluir este scope completo "
+            "(podés agregar más dimensiones si profundizás, pero nunca contradecirlo, "
+            "ignorarlo, ni describir algo fuera de él como si fuera la respuesta)."
+        )
     if contexto_seleccionado:
         partes.append(
             "Hallazgo o gráfico que el usuario tenía seleccionado al escribir esta pregunta "

@@ -65,3 +65,13 @@ def test_desglosar_variacion_con_filtro_dentro_de_dimensiones_no_cambia(df_recie
     )
     assert resultado["filas"]
     assert "nota" not in resultado
+
+
+def test_obtener_resumen_total_bloqueado_con_scope_activo(df_reciente, df_comparativo, df_historico):
+    """Fase 2: con un scope activo, obtener_resumen_total ya no devuelve el
+    total SIN FILTRAR de todo el negocio (esa era una vía directa para que
+    el modelo citara números nacionales dentro de una respuesta scopeada)."""
+    ctx = _ctx(df_reciente, df_comparativo, df_historico)
+    ctx.scope_activo = {"sucursal": "CAPITAL"}
+    resultado = tools.obtener_resumen_total(ctx)
+    assert "error" in resultado

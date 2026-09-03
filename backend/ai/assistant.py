@@ -7,13 +7,14 @@ por IA. La aplicación nunca falla por falta de IA (criterio de aceptación).
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
 
 from config import DIMENSIONES
-from ai import prompts, tools, validator
-from core import charts
+from ai import prompts, scope, tools, validator
+from core import charts, combinations, patterns
 from core.evidence import describir_segmento
 
 logger = logging.getLogger("nexo_ia.assistant")
@@ -198,6 +199,13 @@ def _cliente():
     return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
+def _scope_anterior_de(historial: list[dict]) -> dict:
+    if not historial:
+        return {}
+    segmento_previo = historial[-1].get("segmento") or []
+    return {s["dimension"]: s["valor"] for s in segmento_previo if s.get("dimension")}
+
+
 def responder(
     pregunta: str,
     ctx: tools.ContextoHerramientas,
@@ -209,27 +217,58 @@ def responder(
     anotaciones = anotaciones or []
     historial = historial or []
     client = _cliente()
+    scope_anterior = _scope_anterior_de(historial)
+
     if client is None:
+        scope_propuesto = scope.resolver_scope_determinista(pregunta, ctx.cruces, scope_anterior)
+        scope_final = scope.validar_scope_contra_cruces(scope_propuesto, ctx.cruces)
+        cruces_scope = scope.filtrar_cruces_por_scope(ctx.cruces, scope_final)
         return _respuesta_determinista(
-            pregunta, hallazgos, "No hay una clave de OpenAI configurada: se muestra el mejor hallazgo calculado por Python."
+            pregunta,
+            hallazgos,
+            "No hay una clave de OpenAI configurada: se muestra el mejor hallazgo calculado por Python.",
+            scope_activo=scope_final,
+            cruces_scope=cruces_scope,
+            semanas_grafico=ctx.semanas_grafico,
         )
+
+    # El scope se resuelve UNA vez, antes de tocar ninguna herramienta, y se
+    # usa para filtrar los cruces que el resto del turno (tools + validador +
+    # fallback) puede ver — así deja de depender de que el modelo se acuerde
+    # de repetir el mismo filtro en cada llamada (ver ai/scope.py).
+    scope_propuesto = scope.resolver_scope(client, MODEL, pregunta, scope_anterior, contexto_seleccionado)
+    scope_final = scope.validar_scope_contra_cruces(scope_propuesto, ctx.cruces)
+    cruces_scope = scope.filtrar_cruces_por_scope(ctx.cruces, scope_final)
+    ctx_scope = dataclasses.replace(ctx, cruces=cruces_scope, scope_activo=scope_final)
+
+    logger.info(
+        "responder: scope_anterior=%s scope_propuesto=%s scope_final=%s cruces_visibles=%d/%d",
+        scope_anterior, scope_propuesto, scope_final, len(cruces_scope), len(ctx.cruces),
+    )
 
     mensajes = [{"role": "system", "content": prompts.SYSTEM_ASISTENTE}]
     for turno in historial[-MAX_TURNOS_HISTORIAL:]:
         mensajes.append({"role": "user", "content": turno["pregunta"]})
         mensajes.append({"role": "assistant", "content": turno["respuesta_resumen"]})
-    mensajes.append({"role": "user", "content": prompts.prompt_pregunta(pregunta, contexto_seleccionado, anotaciones)})
+    mensajes.append(
+        {"role": "user", "content": prompts.prompt_pregunta(pregunta, contexto_seleccionado, anotaciones, scope_final)}
+    )
 
     logger.info(
         "responder: pregunta=%r turnos_historial=%d contexto=%s",
         pregunta, min(len(historial), MAX_TURNOS_HISTORIAL), contexto_seleccionado.get("titulo") if contexto_seleccionado else None,
     )
 
+    def _fallback(nota: str) -> dict:
+        return _respuesta_determinista(
+            pregunta, hallazgos, nota, scope_activo=scope_final, cruces_scope=cruces_scope, semanas_grafico=ctx.semanas_grafico
+        )
+
     try:
-        _correr_rondas_de_herramientas(client, mensajes, ctx)
+        _correr_rondas_de_herramientas(client, mensajes, ctx_scope)
         respuesta = _forzar_respuesta_estructurada(client, mensajes)
 
-        valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces, ctx.resumen_total)
+        valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
         intentos = 0
         while not valido and intentos < MAX_REINTENTOS_VALIDACION:
             logger.info("responder: validacion fallida (intento %d): %s", intentos, "; ".join(problemas))
@@ -243,19 +282,17 @@ def responder(
                     ),
                 }
             )
-            _correr_rondas_de_herramientas(client, mensajes, ctx)
+            _correr_rondas_de_herramientas(client, mensajes, ctx_scope)
             respuesta = _forzar_respuesta_estructurada(client, mensajes)
-            valido, problemas = validator.validar_respuesta(respuesta, ctx.cruces, ctx.resumen_total)
+            valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
             intentos += 1
 
         if not valido:
             logger.info("responder: fallback determinista tras %d reintentos. problemas=%s", intentos, "; ".join(problemas))
-            return _respuesta_determinista(
-                pregunta,
-                hallazgos,
+            return _fallback(
                 "La IA no logró producir una respuesta con evidencia suficiente después de "
                 "reintentar; se muestra el mejor hallazgo calculado por Python. Detalle: "
-                + "; ".join(problemas),
+                + "; ".join(problemas)
             )
 
         respuesta["origen"] = "ia"
@@ -271,7 +308,7 @@ def responder(
 
     except Exception as exc:  # noqa: BLE001 - cualquier falla de la API de OpenAI no debe tumbar la app
         logger.exception("responder: error consultando la IA")
-        return _respuesta_determinista(pregunta, hallazgos, f"Error consultando la IA ({exc}); se muestra el mejor hallazgo calculado por Python.")
+        return _fallback(f"Error consultando la IA ({exc}); se muestra el mejor hallazgo calculado por Python.")
 
 
 def _contar_registros(resultado: dict) -> int:
@@ -383,12 +420,49 @@ def _resolver_graficos(graficos: list[dict], ctx: tools.ContextoHerramientas, se
     return resueltos
 
 
-def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> dict:
-    if not hallazgos:
+def _hallazgos_dentro_del_scope(
+    hallazgos: list[dict], scope_activo: dict, cruces_scope: list[dict] | None, semanas_grafico: list[str] | None
+) -> list[dict]:
+    """Restringe los hallazgos priorizados (de TODO el negocio) al scope
+    activo. Si ninguno de esos hallazgos globales cae dentro del scope, se
+    sintetiza uno nuevo con el mismo motor determinístico (`core/patterns.py`)
+    pero usando SÓLO los cruces que ya vienen filtrados a ese scope — nunca
+    se cae de vuelta al hallazgo global más alto sin relación con lo pedido
+    (ese era, en la auditoría, el bug más serio de pérdida de scope: el
+    'modo seguro' terminaba siendo el que menos lo respetaba)."""
+    candidatos = [h for h in hallazgos if scope.objeto_en_scope(h, scope_activo)]
+    if candidatos or not cruces_scope:
+        return candidatos
+
+    materiales_scope = combinations.filtrar_material(cruces_scope)
+    cruce_propio = next((c for c in cruces_scope if c["segmento"] == scope_activo), None)
+    variacion_pct_scope = cruce_propio["variacion_pct"] if cruce_propio else None
+    return patterns.generar_hallazgos(materiales_scope, variacion_pct_scope, semanas_grafico or [], min_n=1, max_n=1)
+
+
+def _respuesta_determinista(
+    pregunta: str,
+    hallazgos: list[dict],
+    nota: str,
+    scope_activo: dict | None = None,
+    cruces_scope: list[dict] | None = None,
+    semanas_grafico: list[str] | None = None,
+) -> dict:
+    scope_activo = scope_activo or {}
+    candidatos = (
+        _hallazgos_dentro_del_scope(hallazgos, scope_activo, cruces_scope, semanas_grafico) if scope_activo else hallazgos
+    )
+
+    if not candidatos:
+        if scope_activo:
+            etiqueta_scope = ", ".join(f"{d}={v}" for d, v in scope_activo.items())
+            que_ocurrio = f"No encontramos un patrón con volumen o impacto suficiente dentro de {etiqueta_scope} para este período."
+        else:
+            que_ocurrio = "No hay hallazgos materiales para este período."
         return {
             "origen": "determinista",
-            "que_ocurrio": "No hay hallazgos materiales para este período.",
-            "segmento": [],
+            "que_ocurrio": que_ocurrio,
+            "segmento": [{"dimension": d, "valor": v} for d, v in scope_activo.items()],
             "cuanto_explica": "0%",
             "metricas_respaldo": [],
             "evolucion_semanal": "Sin datos suficientes.",
@@ -399,7 +473,7 @@ def _respuesta_determinista(pregunta: str, hallazgos: list[dict], nota: str) -> 
             "ranking": [],
         }
 
-    elegido = _elegir_hallazgo_por_palabras_clave(pregunta, hallazgos)
+    elegido = _elegir_hallazgo_por_palabras_clave(pregunta, candidatos)
     serie_str = ", ".join(f"{v:,.0f}".replace(",", ".") for v in elegido["evolucion_semanal"])
 
     grafico_linea = {
