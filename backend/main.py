@@ -20,7 +20,7 @@ import store
 import supabase_client
 from ai import assistant, tools as ai_tools
 from config import DIMENSIONES, MAX_HALLAZGOS, MIN_HALLAZGOS
-from core import charts, combinations, loader, metrics, patterns, periods, validator
+from core import catalogo as catalogo_module, charts, combinations, loader, metrics, patterns, periods, validator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("nexo_ia")
@@ -49,6 +49,7 @@ class ChatRequest(BaseModel):
     pregunta: str
     contexto_seleccionado: dict | None = None
     historial: list[HistorialItem] = []
+    aclaracion_elegida: dict | None = None  # {"dimension", "valor"} si el usuario ya eligió una opción de una aclaración previa
 
 
 class ChartRequestBody(BaseModel):
@@ -122,6 +123,7 @@ async def upload(archivo: UploadFile = File(...)) -> dict:
     hallazgos = patterns.generar_hallazgos(
         cruces_materiales, comp_usd["variacion_pct"], [s.isoformat() for s in p.grafico], MIN_HALLAZGOS, MAX_HALLAZGOS
     )
+    catalogo = catalogo_module.construir_catalogo(cruces)
 
     run = store.Run(
         run_id=run_id,
@@ -138,6 +140,7 @@ async def upload(archivo: UploadFile = File(...)) -> dict:
         resumen_periodo=resumen_periodo,
         validacion=reporte_dict,
         periodos=p.to_dict(),
+        catalogo=catalogo,
     )
     store.guardar(run)
 
@@ -234,12 +237,15 @@ def chat(body: ChatRequest) -> dict:
         semanas_grafico=run.semanas_grafico,
         semanas_historico=run.semanas_historico,
         resumen_total=run.resumen_periodo,
+        catalogo=run.catalogo,
     )
     logger.info("chat: run_id=%s pregunta=%r historial=%d contexto=%s", body.run_id, body.pregunta, len(body.historial), bool(body.contexto_seleccionado))
     historial = [
         {"pregunta": h.pregunta, "respuesta_resumen": h.respuesta_resumen, "segmento": h.segmento or []}
         for h in body.historial
     ]
-    respuesta = assistant.responder(body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones, historial)
+    respuesta = assistant.responder(
+        body.pregunta, ctx, run.hallazgos, body.contexto_seleccionado, run.anotaciones, historial, body.aclaracion_elegida
+    )
     supabase_client.guardar_conversacion(body.run_id, body.pregunta, respuesta)
     return respuesta

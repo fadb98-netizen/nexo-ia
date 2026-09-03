@@ -25,6 +25,7 @@ class ContextoHerramientas:
     semanas_historico: list[str]
     resumen_total: dict | None = None  # comparación actual vs. anterior agregada de TODO el dataset (sin filtrar)
     scope_activo: dict = field(default_factory=dict)  # {dimension: valor} ya resuelto para esta pregunta
+    catalogo: dict = field(default_factory=dict)  # valores reales por dimensión (ver core/catalogo.py)
 
 
 TOOLS_SCHEMA = [

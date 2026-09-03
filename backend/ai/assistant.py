@@ -206,6 +206,25 @@ def _scope_anterior_de(historial: list[dict]) -> dict:
     return {s["dimension"]: s["valor"] for s in segmento_previo if s.get("dimension")}
 
 
+def _respuesta_aclaracion(motivo: str, opciones: list[dict]) -> dict:
+    return {
+        "origen": "aclaracion",
+        "que_ocurrio": "",
+        "segmento": [],
+        "cuanto_explica": "",
+        "metricas_respaldo": [],
+        "evolucion_semanal": "",
+        "nivel_evidencia": "baja",
+        "limitaciones": "",
+        "hay_causa_dominante": False,
+        "graficos": [],
+        "ranking": [],
+        "necesita_aclaracion": True,
+        "pregunta_aclaratoria": motivo or "Tu pregunta puede interpretarse de más de una forma. ¿A cuál te referís?",
+        "opciones": opciones,
+    }
+
+
 def responder(
     pregunta: str,
     ctx: tools.ContextoHerramientas,
@@ -213,15 +232,32 @@ def responder(
     contexto_seleccionado: dict | None = None,
     anotaciones: list[str] | None = None,
     historial: list[dict] | None = None,
+    aclaracion_elegida: dict | None = None,
 ) -> dict:
     anotaciones = anotaciones or []
     historial = historial or []
     client = _cliente()
     scope_anterior = _scope_anterior_de(historial)
 
+    # Si el usuario ya eligió una opción de una aclaración anterior, esa
+    # elección es definitiva para esta pregunta puntual -- no hace falta (ni
+    # conviene) volver a preguntar por el mismo término ambiguo otra vez.
+    if not (aclaracion_elegida and aclaracion_elegida.get("dimension") and aclaracion_elegida.get("valor")):
+        ambigua = scope.detectar_ambiguedad(client, MODEL, pregunta, ctx.catalogo)
+        if ambigua["es_ambigua"]:
+            logger.info("responder: pregunta ambigua (%s) opciones=%s", ambigua["motivo"], ambigua["opciones"])
+            return _respuesta_aclaracion(ambigua["motivo"], ambigua["opciones"])
+
     if client is None:
         scope_propuesto = scope.resolver_scope_determinista(pregunta, ctx.cruces, scope_anterior)
         scope_final = scope.validar_scope_contra_cruces(scope_propuesto, ctx.cruces)
+        if aclaracion_elegida and aclaracion_elegida.get("dimension") and aclaracion_elegida.get("valor"):
+            scope_final = {
+                **scope_final,
+                **scope.validar_scope_contra_cruces(
+                    {aclaracion_elegida["dimension"]: aclaracion_elegida["valor"]}, ctx.cruces
+                ),
+            }
         cruces_scope = scope.filtrar_cruces_por_scope(ctx.cruces, scope_final)
         return _respuesta_determinista(
             pregunta,
@@ -238,6 +274,15 @@ def responder(
     # de repetir el mismo filtro en cada llamada (ver ai/scope.py).
     scope_propuesto = scope.resolver_scope(client, MODEL, pregunta, scope_anterior, contexto_seleccionado)
     scope_final = scope.validar_scope_contra_cruces(scope_propuesto, ctx.cruces)
+    if aclaracion_elegida and aclaracion_elegida.get("dimension") and aclaracion_elegida.get("valor"):
+        # La elección explícita del usuario pisa cualquier lectura propia que
+        # `resolver_scope` haya hecho del mismo término ambiguo.
+        scope_final = {
+            **scope_final,
+            **scope.validar_scope_contra_cruces(
+                {aclaracion_elegida["dimension"]: aclaracion_elegida["valor"]}, ctx.cruces
+            ),
+        }
     cruces_scope = scope.filtrar_cruces_por_scope(ctx.cruces, scope_final)
     ctx_scope = dataclasses.replace(ctx, cruces=cruces_scope, scope_activo=scope_final)
 

@@ -19,6 +19,7 @@ import json
 import logging
 
 from config import DIMENSIONES
+from core.catalogo import valor_existe
 
 logger = logging.getLogger("nexo_ia.assistant")
 
@@ -229,3 +230,124 @@ def filtrar_cruces_por_scope(cruces: list[dict], scope_activo: dict) -> list[dic
     if not scope_activo:
         return cruces
     return [c for c in cruces if objeto_en_scope(c, scope_activo)]
+
+
+# --- Detección de ambigüedad (capa semántica) -------------------------------
+#
+# Antes de esto, si una pregunta podía referirse a dos valores reales
+# distintos de una misma dimensión (p. ej. "clase A" cuando el dataset tiene
+# los códigos "A", "A0", "A1", "A2" y "A3" por separado), el modelo elegía
+# una lectura sin avisar. Acá se detecta ANTES de investigar, usando el
+# catálogo real del dataset (no una lista fija), y si es ambigua se le
+# devuelve al usuario una pregunta aclaratoria con las opciones reales en vez
+# de una conclusión sobre una sola de ellas.
+
+AMBIGUEDAD_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "ambiguedad_pregunta",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["es_ambigua", "motivo", "opciones"],
+            "properties": {
+                "es_ambigua": {"type": "boolean"},
+                "motivo": {
+                    "type": "string",
+                    "description": "Explicación breve de por qué es ambigua (para mostrarle al usuario). String vacío si no lo es.",
+                },
+                "opciones": {
+                    "type": "array",
+                    "maxItems": 6,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["dimension", "valor", "etiqueta"],
+                        "properties": {
+                            "dimension": {"type": "string", "enum": DIMENSIONES},
+                            "valor": {
+                                "type": "string",
+                                "description": "El valor real EXACTO del catálogo (no lo parafrasees).",
+                            },
+                            "etiqueta": {
+                                "type": "string",
+                                "description": "Texto breve para mostrarle a un analista, ej. 'Clase A (código exacto)'.",
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+PROMPT_SISTEMA_AMBIGUEDAD = f"""Tu única tarea es decidir si una pregunta sobre datos
+comerciales es AMBIGUA respecto a qué valor real de una dimensión se refiere,
+ANTES de que el sistema investigue nada. No analizás datos, no calculás
+nada.
+
+Te paso el catálogo de valores reales que existen en el dataset para cada
+dimensión ({DIMENSIONES}).
+
+Es ambigua SÓLO si un término de la pregunta podría corresponder,
+razonablemente, a 2 o más valores REALES Y DISTINTOS del catálogo — y esos
+valores darían resultados distintos. Ejemplo típico: preguntan por "clase A"
+y el catálogo tiene, por separado, los códigos "A", "A0", "A1", "A2" y "A3".
+Otro: el término coincide con un valor de una dimensión Y con un valor de
+otra dimensión distinta.
+
+NO marques ambigüedad:
+- si el término coincide EXACTAMENTE con un único valor real (eso no es
+  ambiguo, aunque existan otros valores parecidos: "CAPITAL" no es ambiguo
+  sólo porque también exista "CAPITAL FEDERAL" si la pregunta dice
+  "CAPITAL" tal cual);
+- por errores de tipeo menores, sinónimos obvios de la dimensión (p. ej.
+  "oficina" para sucursal), o dudas triviales;
+- cuando la pregunta no menciona ningún valor puntual (es sobre el total, o
+  pide un desglose "por" una dimensión sin nombrar un valor).
+Ante la duda, preferí NO interrumpir: sólo marcá ambigüedad cuando haya de
+verdad 2 o más interpretaciones razonables con datos distintos detrás.
+
+Si `es_ambigua` es true, listá en `opciones` entre 2 y 6 valores reales
+candidatos (tomados literalmente del catálogo, nunca inventados), cada uno
+con una `etiqueta` breve y clara pensada para un analista de negocio, no
+para un programador.
+"""
+
+
+def _prompt_usuario_ambiguedad(pregunta: str, catalogo: dict) -> str:
+    resumen = {dim: [v["valor"] for v in valores][:80] for dim, valores in catalogo.items()}
+    return f"Pregunta: {pregunta}\n\nCatálogo de valores reales por dimensión: " + json.dumps(
+        resumen, ensure_ascii=False
+    )
+
+
+def detectar_ambiguedad(client, model: str, pregunta: str, catalogo: dict | None) -> dict:
+    """Devuelve `{"es_ambigua": bool, "motivo": str, "opciones": [...]}`.
+    Cada opción es `{"dimension", "valor", "etiqueta"}`, con `valor`
+    verificado contra el catálogo real (nunca se propaga una opción
+    inventada por el modelo, aunque haya marcado `es_ambigua`)."""
+    sin_ambiguedad = {"es_ambigua": False, "motivo": "", "opciones": []}
+    if client is None or not catalogo:
+        return sin_ambiguedad
+
+    mensajes = [
+        {"role": "system", "content": PROMPT_SISTEMA_AMBIGUEDAD},
+        {"role": "user", "content": _prompt_usuario_ambiguedad(pregunta, catalogo)},
+    ]
+    try:
+        resp = client.chat.completions.create(model=model, messages=mensajes, response_format=AMBIGUEDAD_JSON_SCHEMA)
+        data = json.loads(resp.choices[0].message.content)
+    except Exception:
+        logger.exception("detectar_ambiguedad: fallo consultando la IA, se sigue sin marcar ambigüedad")
+        return sin_ambiguedad
+
+    opciones = [
+        o
+        for o in (data.get("opciones") or [])
+        if valor_existe(catalogo, o.get("dimension", ""), o.get("valor", ""))
+    ]
+    if not data.get("es_ambigua") or len(opciones) < 2:
+        return sin_ambiguedad
+    return {"es_ambigua": True, "motivo": data.get("motivo") or "", "opciones": opciones}

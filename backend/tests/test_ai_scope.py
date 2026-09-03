@@ -1,8 +1,25 @@
 from __future__ import annotations
 
+import json
+import types
+
 from ai import scope
 from core import combinations
 from tests.conftest import SEMANA_COMPARATIVA, SEMANA_RECIENTE
+
+
+class _ClienteFalso:
+    """Simula la forma mínima del cliente de OpenAI que usa `scope.py`
+    (`client.chat.completions.create(...).choices[0].message.content`),
+    para poder probar el filtrado de opciones sin llamar a la API real."""
+
+    def __init__(self, contenido: dict):
+        self._contenido = contenido
+        self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        mensaje = types.SimpleNamespace(content=json.dumps(self._contenido))
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=mensaje)])
 
 
 def _cruces(df_reciente, df_comparativo, df_historico):
@@ -71,6 +88,53 @@ def test_resolver_scope_determinista_sin_mencion_hereda_el_anterior(df_reciente,
     cruces = _cruces(df_reciente, df_comparativo, df_historico)
     resultado = scope.resolver_scope_determinista("¿cuál explica más esa variación?", cruces, {"sucursal": "CAPITAL"})
     assert resultado == {"sucursal": "CAPITAL"}
+
+
+def test_detectar_ambiguedad_sin_cliente_no_marca_nada():
+    assert scope.detectar_ambiguedad(None, "modelo-x", "¿cómo viene la clase A?", {"abc_cliente": []}) == {
+        "es_ambigua": False,
+        "motivo": "",
+        "opciones": [],
+    }
+
+
+def test_detectar_ambiguedad_descarta_opciones_inventadas_y_valida_las_reales():
+    """Aunque el modelo diga es_ambigua=true, cada opción se contrasta contra
+    el catálogo real -- una opción con un valor que no existe en los datos
+    nunca llega al usuario."""
+    catalogo = {"abc_cliente": [{"valor": "A", "volumen_pedidos": 10}, {"valor": "A1", "volumen_pedidos": 20}]}
+    cliente = _ClienteFalso(
+        {
+            "es_ambigua": True,
+            "motivo": "Clase A puede ser el código exacto o la familia A1-A3.",
+            "opciones": [
+                {"dimension": "abc_cliente", "valor": "A", "etiqueta": "Clase A (código exacto)"},
+                {"dimension": "abc_cliente", "valor": "A1", "etiqueta": "Clase A1"},
+                {"dimension": "abc_cliente", "valor": "A99_INVENTADO", "etiqueta": "Opción inventada"},
+            ],
+        }
+    )
+    resultado = scope.detectar_ambiguedad(cliente, "modelo-x", "¿cómo viene la clase A?", catalogo)
+    assert resultado["es_ambigua"] is True
+    assert {o["valor"] for o in resultado["opciones"]} == {"A", "A1"}
+
+
+def test_detectar_ambiguedad_con_menos_de_2_opciones_validas_no_marca_ambiguedad():
+    """Si al descartar las opciones inventadas queda una sola (o ninguna)
+    opción real, preguntar no tiene sentido -- no hay entre qué elegir."""
+    catalogo = {"abc_cliente": [{"valor": "A", "volumen_pedidos": 10}]}
+    cliente = _ClienteFalso(
+        {
+            "es_ambigua": True,
+            "motivo": "...",
+            "opciones": [
+                {"dimension": "abc_cliente", "valor": "A", "etiqueta": "Clase A"},
+                {"dimension": "abc_cliente", "valor": "INVENTADO", "etiqueta": "..."},
+            ],
+        }
+    )
+    resultado = scope.detectar_ambiguedad(cliente, "modelo-x", "¿cómo viene la clase A?", catalogo)
+    assert resultado["es_ambigua"] is False
 
 
 def test_objeto_en_scope_requiere_la_dimension_y_el_valor():

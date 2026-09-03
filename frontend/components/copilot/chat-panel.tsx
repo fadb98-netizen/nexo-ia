@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { UserBubble, AssistantResponse } from "./chat-message";
 import { preguntar } from "@/lib/api";
-import type { ChatResponse, ContextoSeleccionado, HistorialItem } from "@/types";
+import type { ChatResponse, ContextoSeleccionado, HistorialItem, OpcionAclaracion } from "@/types";
 
 const TURNOS_HISTORIAL_ENVIADOS = 4;
 
@@ -25,6 +25,7 @@ interface Mensaje {
   texto?: string;
   respuesta?: ChatResponse;
   cargando?: boolean;
+  preguntaOriginal?: string; // sólo en mensajes de asistente: la pregunta que la generó (para reenviar si pide una aclaración)
 }
 
 export function ChatPanel({
@@ -44,7 +45,7 @@ export function ChatPanel({
   const ultimoNonce = React.useRef<number>(-1);
 
   const enviar = React.useCallback(
-    async (texto: string) => {
+    async (texto: string, aclaracion?: OpcionAclaracion) => {
       if (!texto.trim()) return;
       const idUsuario = `u-${Date.now()}`;
       const idAsistente = `a-${Date.now()}`;
@@ -53,7 +54,15 @@ export function ChatPanel({
       for (let i = 0; i < mensajes.length - 1; i++) {
         const pregunta = mensajes[i];
         const respuesta = mensajes[i + 1];
-        if (pregunta.rol === "usuario" && pregunta.texto && respuesta.rol === "asistente" && respuesta.respuesta) {
+        // las respuestas que sólo pidieron una aclaración no aportan resumen
+        // ni segmento real: no vale la pena mandarlas como "memoria" de la conversación.
+        if (
+          pregunta.rol === "usuario" &&
+          pregunta.texto &&
+          respuesta.rol === "asistente" &&
+          respuesta.respuesta &&
+          !respuesta.respuesta.necesita_aclaracion
+        ) {
           historial.push({
             pregunta: pregunta.texto,
             respuesta_resumen: `${respuesta.respuesta.que_ocurrio} ${respuesta.respuesta.cuanto_explica}`.trim(),
@@ -70,12 +79,18 @@ export function ChatPanel({
 
       setMensajes((prev) => [
         ...prev,
-        { id: idUsuario, rol: "usuario", texto },
-        { id: idAsistente, rol: "asistente", cargando: true },
+        { id: idUsuario, rol: "usuario", texto: aclaracion ? aclaracion.etiqueta : texto },
+        { id: idAsistente, rol: "asistente", cargando: true, preguntaOriginal: texto },
       ]);
       setInput("");
       try {
-        const respuesta = await preguntar(runId, texto, contextoDeEstaPregunta, historialReciente);
+        const respuesta = await preguntar(
+          runId,
+          texto,
+          contextoDeEstaPregunta,
+          historialReciente,
+          aclaracion ? { dimension: aclaracion.dimension, valor: aclaracion.valor } : undefined
+        );
         setMensajes((prev) => prev.map((m) => (m.id === idAsistente ? { ...m, cargando: false, respuesta } : m)));
       } catch (err) {
         setMensajes((prev) =>
@@ -104,6 +119,13 @@ export function ChatPanel({
       }
     },
     [runId, contexto, mensajes, onLimpiarContexto]
+  );
+
+  const elegirOpcion = React.useCallback(
+    (preguntaOriginal: string, opcion: OpcionAclaracion) => {
+      enviar(preguntaOriginal, opcion);
+    },
+    [enviar]
   );
 
   React.useEffect(() => {
@@ -153,7 +175,11 @@ export function ChatPanel({
               <Spinner /> Investigando con evidencia…
             </div>
           ) : m.respuesta ? (
-            <AssistantResponse key={m.id} respuesta={m.respuesta} />
+            <AssistantResponse
+              key={m.id}
+              respuesta={m.respuesta}
+              onElegirOpcion={(opcion) => elegirOpcion(m.preguntaOriginal ?? "", opcion)}
+            />
           ) : null
         )}
       </div>

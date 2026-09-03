@@ -4,8 +4,9 @@ from datetime import date
 
 import polars as pl
 
-from ai import assistant, tools
+from ai import assistant, scope as ai_scope, tools
 from config import COL_FAMILIA, COL_SEMANA, COL_SUCURSAL, COL_USD, COL_KG, COL_PEDIDO_ID, COL_POSICIONES, COL_CLIENTE_ID
+from core import combinations
 from tests.conftest import SEMANA_COMPARATIVA, SEMANA_RECIENTE
 
 
@@ -121,6 +122,76 @@ def test_respuesta_determinista_con_scope_sintetiza_hallazgo_si_ninguno_global_m
 
     assert all(s["dimension"] != "sucursal" or s["valor"] == "CAPITAL" for s in resp["segmento"])
     assert "ROSARIO" not in resp["que_ocurrio"]
+
+
+def test_responder_pregunta_ambigua_corta_antes_de_investigar(monkeypatch):
+    """Si `detectar_ambiguedad` marca la pregunta como ambigua, responder()
+    devuelve la aclaración directo -- nunca llega a resolver scope ni a
+    llamar ninguna herramienta."""
+    import json
+    import types
+
+    class _ClienteFalso:
+        def __init__(self, contenido):
+            self._contenido = contenido
+            self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
+
+        def _create(self, **kwargs):
+            mensaje = types.SimpleNamespace(content=json.dumps(self._contenido))
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=mensaje)])
+
+    contenido_ambiguo = {
+        "es_ambigua": True,
+        "motivo": "Clase A puede ser el código exacto o toda la familia A1-A3.",
+        "opciones": [
+            {"dimension": "abc_cliente", "valor": "A", "etiqueta": "Clase A (código exacto)"},
+            {"dimension": "abc_cliente", "valor": "A1", "etiqueta": "Clase A1"},
+        ],
+    }
+    monkeypatch.setattr(assistant, "_cliente", lambda: _ClienteFalso(contenido_ambiguo))
+
+    ctx = tools.ContextoHerramientas(
+        cruces=[],
+        df_reciente=_df([]),
+        df_comparativo=_df([]),
+        semanas_grafico=[],
+        semanas_historico=[],
+        catalogo={"abc_cliente": [{"valor": "A", "volumen_pedidos": 10}, {"valor": "A1", "volumen_pedidos": 5}]},
+    )
+
+    resp = assistant.responder("¿cómo viene la clase A?", ctx, hallazgos=[])
+
+    assert resp["necesita_aclaracion"] is True
+    assert {o["valor"] for o in resp["opciones"]} == {"A", "A1"}
+
+
+def test_responder_con_aclaracion_elegida_no_vuelve_a_preguntar(monkeypatch, df_reciente, df_comparativo, df_historico):
+    """Si el usuario ya eligió una opción de una aclaración anterior, esa
+    elección entra directo al scope de esta pregunta -- nunca se vuelve a
+    llamar `detectar_ambiguedad` para el mismo término."""
+    monkeypatch.setattr(assistant, "_cliente", lambda: None)  # simula "sin OPENAI_API_KEY": camino determinista
+
+    def _no_deberia_llamarse(*args, **kwargs):
+        raise AssertionError("detectar_ambiguedad no debería llamarse: el usuario ya desambiguó")
+
+    monkeypatch.setattr(ai_scope, "detectar_ambiguedad", _no_deberia_llamarse)
+
+    cruces = combinations.calcular_todas_las_combinaciones(
+        df_reciente, df_comparativo, df_historico, [SEMANA_COMPARATIVA, SEMANA_RECIENTE], []
+    )
+    ctx = tools.ContextoHerramientas(
+        cruces=cruces,
+        df_reciente=df_reciente,
+        df_comparativo=df_comparativo,
+        semanas_grafico=[SEMANA_COMPARATIVA.isoformat(), SEMANA_RECIENTE.isoformat()],
+        semanas_historico=[],
+    )
+
+    resp = assistant.responder(
+        "¿cómo viene la clase A?", ctx, hallazgos=[], aclaracion_elegida={"dimension": "sucursal", "valor": "CAPITAL"}
+    )
+
+    assert resp["segmento"] == [{"dimension": "sucursal", "valor": "CAPITAL"}]
 
 
 def test_resolver_graficos_sin_segmento_no_inyecta_nada():

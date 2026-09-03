@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { ChartRenderer } from "@/components/charts/chart-renderer";
-import { ETIQUETAS_DIMENSION, type ChatResponse, type Dimension } from "@/types";
+import { ETIQUETAS_DIMENSION, type ChatResponse, type Dimension, type OpcionAclaracion } from "@/types";
 
 const TONO_EVIDENCIA: Record<string, "positive" | "warning" | "neutral"> = {
   alta: "positive",
@@ -14,7 +14,46 @@ export function UserBubble({ texto }: { texto: string }) {
   );
 }
 
-export function AssistantResponse({ respuesta }: { respuesta: ChatResponse }) {
+function AclaracionCard({
+  respuesta,
+  onElegirOpcion,
+}: {
+  respuesta: ChatResponse;
+  onElegirOpcion?: (opcion: OpcionAclaracion) => void;
+}) {
+  return (
+    <div className="mr-2 space-y-2.5 rounded-lg rounded-tl-sm border border-accent/30 bg-accent/5 p-3 text-sm">
+      <div className="flex items-center gap-1.5">
+        <Badge tone="accent">Necesita una aclaración</Badge>
+      </div>
+      <p className="leading-relaxed text-fg">{respuesta.pregunta_aclaratoria}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {(respuesta.opciones ?? []).map((opcion, i) => (
+          <button
+            key={i}
+            onClick={() => onElegirOpcion?.(opcion)}
+            disabled={!onElegirOpcion}
+            className="rounded-md border border-accent/40 bg-bg-subtle px-2.5 py-1.5 text-left text-xs text-fg transition-colors hover:border-accent hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {opcion.etiqueta}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function AssistantResponse({
+  respuesta,
+  onElegirOpcion,
+}: {
+  respuesta: ChatResponse;
+  onElegirOpcion?: (opcion: OpcionAclaracion) => void;
+}) {
+  if (respuesta.necesita_aclaracion) {
+    return <AclaracionCard respuesta={respuesta} onElegirOpcion={onElegirOpcion} />;
+  }
+
   return (
     <div className="mr-2 space-y-2.5 rounded-lg rounded-tl-sm border border-border bg-bg-subtle p-3 text-sm">
       <div className="flex flex-wrap items-center gap-1.5">

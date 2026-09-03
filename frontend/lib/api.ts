@@ -39,7 +39,8 @@ export async function preguntar(
   runId: string,
   pregunta: string,
   contextoSeleccionado?: ContextoSeleccionado | null,
-  historial?: HistorialItem[]
+  historial?: HistorialItem[],
+  aclaracionElegida?: { dimension: string; valor: string } | null
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
@@ -49,6 +50,7 @@ export async function preguntar(
       pregunta,
       contexto_seleccionado: contextoSeleccionado ?? null,
       historial: historial ?? [],
+      aclaracion_elegida: aclaracionElegida ?? null,
     }),
   });
   if (!res.ok) throw new ApiError(await parseErrorDetail(res), res.status);

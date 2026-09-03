@@ -34,6 +34,7 @@ class Run:
     resumen_periodo: dict
     validacion: dict
     periodos: dict
+    catalogo: dict = field(default_factory=dict)  # valores reales por dimensión, para detectar ambigüedad (ai/scope.py)
     anotaciones: list[str] = field(default_factory=list)
 
 

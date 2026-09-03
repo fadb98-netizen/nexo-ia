@@ -154,8 +154,14 @@ export interface RankingItem {
   valor: string;
 }
 
+export interface OpcionAclaracion {
+  dimension: Dimension;
+  valor: string;
+  etiqueta: string;
+}
+
 export interface ChatResponse {
-  origen: "ia" | "determinista";
+  origen: "ia" | "determinista" | "aclaracion";
   que_ocurrio: string;
   segmento: SegmentoDim[];
   cuanto_explica: string;
@@ -166,6 +172,9 @@ export interface ChatResponse {
   hay_causa_dominante: boolean;
   graficos: ChatGrafico[];
   ranking: RankingItem[];
+  necesita_aclaracion?: boolean;
+  pregunta_aclaratoria?: string;
+  opciones?: OpcionAclaracion[];
 }
 
 export interface HistorialItem {
