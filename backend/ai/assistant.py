@@ -11,9 +11,10 @@ import dataclasses
 import json
 import logging
 import os
+import types
 
 from config import DIMENSIONES
-from ai import prompts, scope, tools, validator
+from ai import correcciones, prompts, scope, tools, validator
 from core import charts, combinations, patterns
 from core.evidence import describir_segmento
 
@@ -199,6 +200,25 @@ def _cliente():
     return OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 
+class _ClienteContado:
+    """Envoltorio fino sobre el cliente de OpenAI que sólo cuenta cuántas
+    llamadas (`chat.completions.create`) se hicieron para responder UNA
+    pregunta — detección de ambigüedad, resolución de scope, rondas de
+    tool-calling y la respuesta estructurada final, todas cuentan. Es la
+    visibilidad de costo/latencia por pregunta que faltaba (ver auditoría,
+    sección 08): antes no había ninguna forma de saber, sin leer logs de
+    OpenAI, cuántas llamadas terminó costando una sola respuesta."""
+
+    def __init__(self, cliente):
+        self._cliente = cliente
+        self.llamadas = 0
+        self.chat = types.SimpleNamespace(completions=types.SimpleNamespace(create=self._create))
+
+    def _create(self, **kwargs):
+        self.llamadas += 1
+        return self._cliente.chat.completions.create(**kwargs)
+
+
 def _scope_anterior_de(historial: list[dict]) -> dict:
     if not historial:
         return {}
@@ -237,15 +257,19 @@ def responder(
     anotaciones = anotaciones or []
     historial = historial or []
     client = _cliente()
+    contador = _ClienteContado(client) if client is not None else None
     scope_anterior = _scope_anterior_de(historial)
 
     # Si el usuario ya eligió una opción de una aclaración anterior, esa
     # elección es definitiva para esta pregunta puntual -- no hace falta (ni
     # conviene) volver a preguntar por el mismo término ambiguo otra vez.
     if not (aclaracion_elegida and aclaracion_elegida.get("dimension") and aclaracion_elegida.get("valor")):
-        ambigua = scope.detectar_ambiguedad(client, MODEL, pregunta, ctx.catalogo)
+        ambigua = scope.detectar_ambiguedad(contador, MODEL, pregunta, ctx.catalogo)
         if ambigua["es_ambigua"]:
-            logger.info("responder: pregunta ambigua (%s) opciones=%s", ambigua["motivo"], ambigua["opciones"])
+            logger.info(
+                "responder: pregunta ambigua (%s) opciones=%s llamadas_openai=%d",
+                ambigua["motivo"], ambigua["opciones"], contador.llamadas if contador else 0,
+            )
             return _respuesta_aclaracion(ambigua["motivo"], ambigua["opciones"])
 
     if client is None:
@@ -272,7 +296,7 @@ def responder(
     # usa para filtrar los cruces que el resto del turno (tools + validador +
     # fallback) puede ver — así deja de depender de que el modelo se acuerde
     # de repetir el mismo filtro en cada llamada (ver ai/scope.py).
-    scope_propuesto = scope.resolver_scope(client, MODEL, pregunta, scope_anterior, contexto_seleccionado)
+    scope_propuesto = scope.resolver_scope(contador, MODEL, pregunta, scope_anterior, contexto_seleccionado)
     scope_final = scope.validar_scope_contra_cruces(scope_propuesto, ctx.cruces)
     if aclaracion_elegida and aclaracion_elegida.get("dimension") and aclaracion_elegida.get("valor"):
         # La elección explícita del usuario pisa cualquier lectura propia que
@@ -310,27 +334,21 @@ def responder(
         )
 
     try:
-        _correr_rondas_de_herramientas(client, mensajes, ctx_scope)
-        respuesta = _forzar_respuesta_estructurada(client, mensajes)
+        _correr_rondas_de_herramientas(contador, mensajes, ctx_scope)
+        respuesta = _forzar_respuesta_estructurada(contador, mensajes)
 
         valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
         intentos = 0
         while not valido and intentos < MAX_REINTENTOS_VALIDACION:
             logger.info("responder: validacion fallida (intento %d): %s", intentos, "; ".join(problemas))
             mensajes.append({"role": "assistant", "content": json.dumps(respuesta, ensure_ascii=False)})
-            mensajes.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "Tu respuesta anterior tiene estos problemas, corregilos usando más "
-                        "herramientas si hace falta y volvé a responder: " + "; ".join(problemas)
-                    ),
-                }
-            )
-            _correr_rondas_de_herramientas(client, mensajes, ctx_scope)
-            respuesta = _forzar_respuesta_estructurada(client, mensajes)
+            mensajes.append({"role": "user", "content": correcciones.construir_mensaje_correccion(problemas)})
+            _correr_rondas_de_herramientas(contador, mensajes, ctx_scope)
+            respuesta = _forzar_respuesta_estructurada(contador, mensajes)
             valido, problemas = validator.validar_respuesta(respuesta, ctx_scope.cruces, ctx_scope.resumen_total)
             intentos += 1
+
+        logger.info("responder: llamadas_openai=%d intentos_validacion=%d", contador.llamadas, intentos)
 
         if not valido:
             logger.info("responder: fallback determinista tras %d reintentos. problemas=%s", intentos, "; ".join(problemas))
@@ -352,7 +370,7 @@ def responder(
         return respuesta
 
     except Exception as exc:  # noqa: BLE001 - cualquier falla de la API de OpenAI no debe tumbar la app
-        logger.exception("responder: error consultando la IA")
+        logger.exception("responder: error consultando la IA (llamadas_openai=%d)", contador.llamadas)
         return _fallback(f"Error consultando la IA ({exc}); se muestra el mejor hallazgo calculado por Python.")
 
 
